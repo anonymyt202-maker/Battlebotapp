@@ -1,0 +1,19 @@
+{
+  "name": "ovoz-battle-bot",
+  "version": "1.0.0",
+  "description": "Telegram Ovoz Battle Mini App - Railway Deploy",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node --watch bot.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "telegraf": "^4.16.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
