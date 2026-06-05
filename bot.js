@@ -7,6 +7,32 @@ const svc = require('./services/battleService');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
+function getMiniAppUrl() {
+  const botUsername = (process.env.BOT_USERNAME || '').replace(/^@/, '');
+  if (botUsername) {
+    return `https://t.me/${botUsername}?startapp=miniapp`;
+  }
+  const base = (process.env.MINIAPP_URL || '').replace(/\/$/, '');
+  return base ? `${base}/miniapp` : '/miniapp';
+}
+
+function parseVotePayload(payload = '') {
+  const raw = String(payload || '').trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(/^vote[-_]/i, '');
+  if (normalized === raw) return null;
+
+  const lastSep = normalized.lastIndexOf('_');
+  if (lastSep === -1) return null;
+
+  const battleId = normalized.slice(0, lastSep);
+  const participantToken = normalized.slice(lastSep + 1);
+  if (!battleId || !participantToken) return null;
+
+  return { battleId, participantToken };
+}
+
 // ─── Bloklangan foydalanuvchilar filteri ──────────────────────
 bot.use(async (ctx, next) => {
   if (!ctx.from) return next();
@@ -36,7 +62,13 @@ bot.start(async (ctx) => {
     return svc.joinBattle(bot, ctx, payload.slice(5));
   }
 
-  const miniUrl = (process.env.MINIAPP_URL || '') + '/miniapp';
+  // vote-BATTLEID-TOKEN / vote_BATTLEID_TOKEN
+  const vote = parseVotePayload(payload);
+  if (vote) {
+    return svc.handleRefVote(bot, ctx, vote.battleId, vote.participantToken);
+  }
+
+  const miniUrl = getMiniAppUrl();
   return ctx.reply(
     `👋 Salom, <b>${ctx.from.first_name}</b>!\n\n` +
     `🏆 <b>Voice Battle Bot</b>ga xush kelibsiz!\n\n` +
@@ -45,7 +77,7 @@ bot.start(async (ctx) => {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🎤 Battle yaratish', web_app: { url: miniUrl } }],
+          [{ text: '🎤 Battle yaratish', url: miniUrl }],
           [{ text: '📢 Kanal qo\'shish', callback_data: 'add_channel_start' }],
         ]
       }
@@ -85,7 +117,7 @@ bot.command('addchannel', async (ctx) => {
   if (!parts[1]) {
     return ctx.reply(
       '❌ Foydalanish: <code>/addchannel @kanal_username</code>\n\n' +
-      '📌 Bot kaналда admin bo\'lishi kerak!',
+      '📌 Bot kanalda admin bo\'lishi kerak!',
       { parse_mode: 'HTML' }
     );
   }
@@ -173,7 +205,8 @@ bot.command('admin', requireAdmin, (ctx) => {
     `/admin_unblock UID — Blokdan chiqarish\n` +
     `/admin_broadcast MATN — Broadcast\n` +
     `/admin_users — Users.json yuklash\n` +
-    `/admin_channels — Barcha kanallar`,
+    `/admin_channels — Barcha kanallar\n` +
+    `/admin_addchannel @username — Kanal qo'shish`,
     { parse_mode: 'HTML' }
   );
 });
@@ -221,6 +254,15 @@ bot.command('admin_channels', requireAdmin, (ctx) => {
     `• <code>${c.channel_id}</code> → user <code>${c.owner_id}</code> — ${c.title || '—'}`
   ).join('\n');
   ctx.reply(`📢 <b>Barcha kanallar:</b>\n\n${lines}`, { parse_mode: 'HTML' });
+});
+
+// /admin_addchannel @username
+bot.command('admin_addchannel', requireAdmin, async (ctx) => {
+  const parts = ctx.message.text.trim().split(/\s+/);
+  if (!parts[1]) {
+    return ctx.reply('Foydalanish: /admin_addchannel @kanal_username');
+  }
+  await svc.addChannelForUser(bot, ctx, parts[1], { forceOwnerId: ctx.from.id, adminMode: true });
 });
 
 // /admin_battles
