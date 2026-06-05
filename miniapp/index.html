@@ -1,218 +1,212 @@
 <!DOCTYPE html>
 <html lang="uz">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
   <title>Voice Battle</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-  <div id="app">
+<div id="app">
 
-    <!-- ── LOADER ── -->
-    <div id="loader" class="loader-screen">
-      <div class="loader-icon">
-        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="32" cy="32" r="28" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="8 4"/>
-          <path d="M24 20 L24 44 L44 32 Z" fill="var(--accent)"/>
-        </svg>
-      </div>
-      <p class="loader-text">Yuklanmoqda…</p>
+  <div id="loader" class="loader-screen">
+    <div class="loader-icon">
+      <svg viewBox="0 0 64 64" fill="none">
+        <circle cx="32" cy="32" r="28" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="8 4"/>
+        <path d="M24 20L24 44L44 32Z" fill="var(--accent)"/>
+      </svg>
     </div>
+    <p class="loader-text">Yuklanmoqda…</p>
+  </div>
 
-    <!-- ── MAIN LAYOUT ── -->
-    <div id="main" class="main hidden">
+  <div id="main" class="main hidden">
 
-      <!-- Header -->
-      <header class="header">
-        <div class="header-left">
-          <div class="avatar" id="userAvatar">?</div>
-          <div class="header-info">
-            <span class="header-name" id="headerName">Foydalanuvchi</span>
-            <span class="header-sub" id="headerSub">@username</span>
-          </div>
+    <header class="header">
+      <div class="header-left">
+        <div class="avatar" id="userAvatar">?</div>
+        <div class="header-info">
+          <span class="header-name" id="headerName">Foydalanuvchi</span>
+          <span class="header-sub"  id="headerSub">@username</span>
         </div>
-        <div class="header-badge" id="balanceBadge">
-          <span>💎</span>
-          <span id="balanceVal">0</span>
-        </div>
-      </header>
-
-      <!-- Tabs -->
-      <nav class="tabs">
-        <button class="tab active" data-tab="profile">👤 Profil</button>
-        <button class="tab" data-tab="create">➕ Yaratish</button>
-        <button class="tab" data-tab="battles">📋 Battlelar</button>
-      </nav>
-
-      <!-- ═══ PROFILE TAB ═══════════════════════════════════════ -->
-      <section id="tab-profile" class="tab-content active">
-        <div class="profile-hero">
-          <div class="profile-avatar" id="profileAvatar">?</div>
-          <h2 id="profileName">—</h2>
-          <span class="profile-handle" id="profileHandle">—</span>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-card">
-            <span class="info-icon">🆔</span>
-            <div>
-              <div class="info-label">Telegram ID</div>
-              <div class="info-value mono" id="infoId">—</div>
-            </div>
-          </div>
-          <div class="info-card">
-            <span class="info-icon">💎</span>
-            <div>
-              <div class="info-label">Balans</div>
-              <div class="info-value" id="infoBalance">0</div>
-            </div>
-          </div>
-          <div class="info-card">
-            <span class="info-icon">🎤</span>
-            <div>
-              <div class="info-label">Jami battlelar</div>
-              <div class="info-value" id="infoTotal">0</div>
-            </div>
-          </div>
-          <div class="info-card">
-            <span class="info-icon">⚡</span>
-            <div>
-              <div class="info-label">Faol battlelar</div>
-              <div class="info-value" id="infoActive">0</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="stats-banner">
-          <div class="stats-item">
-            <div class="stats-num" id="statUsers">—</div>
-            <div class="stats-label">Foydalanuvchilar</div>
-          </div>
-          <div class="stats-divider"></div>
-          <div class="stats-item">
-            <div class="stats-num" id="statBattles">—</div>
-            <div class="stats-label">Jami battle</div>
-          </div>
-          <div class="stats-divider"></div>
-          <div class="stats-item">
-            <div class="stats-num" id="statActive">—</div>
-            <div class="stats-label">Faol</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═══ CREATE TAB ════════════════════════════════════════ -->
-      <section id="tab-create" class="tab-content">
-        <div class="section-header">
-          <h2>🎤 Yangi Battle</h2>
-          <p>Barcha maydonlarni to'ldiring</p>
-        </div>
-
-        <form id="createForm" autocomplete="off">
-
-          <div class="field-group">
-            <label class="field-label">Battle nomi <span class="req">*</span></label>
-            <div class="field-wrap">
-              <span class="field-icon">🎤</span>
-              <input type="text" id="f-name" class="field-input" placeholder="Masalan: Yoz Battle 2025" maxlength="80" required />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Kanal <span class="req">*</span></label>
-            <div class="field-wrap">
-              <span class="field-icon">📢</span>
-              <input type="text" id="f-channel" class="field-input" placeholder="@mening_kanalim" maxlength="100" required />
-              <button type="button" id="checkChannelBtn" class="field-action">Tekshir</button>
-            </div>
-            <div id="channelStatus" class="field-hint"></div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Maqsad ovozlar <span class="req">*</span></label>
-            <div class="field-wrap">
-              <span class="field-icon">🎯</span>
-              <input type="number" id="f-target" class="field-input" placeholder="Masalan: 100" min="1" max="100000" required />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Mukofot <span class="req">*</span></label>
-            <div class="field-wrap">
-              <span class="field-icon">🎁</span>
-              <textarea id="f-reward" class="field-input field-textarea" placeholder="Masalan: 🥇 1-o'ringa Premium 1 oy" maxlength="300" required></textarea>
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Tugma matni</label>
-            <div class="field-wrap">
-              <span class="field-icon">🔥</span>
-              <input type="text" id="f-button" class="field-input" placeholder="🔥 Ovoz berish" maxlength="50" />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Rasm URL <span class="optional">(ixtiyoriy)</span></label>
-            <div class="field-wrap">
-              <span class="field-icon">🖼️</span>
-              <input type="url" id="f-image" class="field-input" placeholder="https://example.com/image.jpg" />
-            </div>
-          </div>
-
-          <!-- Image preview -->
-          <div id="imagePreview" class="image-preview hidden">
-            <img id="previewImg" src="" alt="preview" />
-            <button type="button" id="removeImage" class="remove-img">✕</button>
-          </div>
-
-          <div id="createError" class="error-msg hidden"></div>
-
-          <button type="submit" id="createBtn" class="btn-primary">
-            <span id="createBtnText">🚀 Battle yaratish</span>
-            <div id="createSpinner" class="spinner hidden"></div>
-          </button>
-
-        </form>
-      </section>
-
-      <!-- ═══ BATTLES TAB ══════════════════════════════════════ -->
-      <section id="tab-battles" class="tab-content">
-        <div class="section-header">
-          <h2>📋 Mening Battlelarim</h2>
-          <p id="battlesSubtitle">Yuklanmoqda…</p>
-        </div>
-
-        <div id="battlesEmpty" class="empty-state hidden">
-          <div class="empty-icon">🎤</div>
-          <p>Hali battle yaratmadingiz</p>
-          <button class="btn-secondary" onclick="switchTab('create')">➕ Yaratish</button>
-        </div>
-
-        <div id="battlesList" class="battles-list"></div>
-      </section>
-
-    </div><!-- /main -->
-
-    <!-- ── SUCCESS MODAL ── -->
-    <div id="successModal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-card">
-        <div class="modal-icon">🎉</div>
-        <h3>Battle yaratildi!</h3>
-        <p id="modalText">Kanalga post yuborildi.</p>
-        <div id="modalDetails" class="modal-details"></div>
-        <button class="btn-primary" onclick="closeModal()">✅ Yopish</button>
       </div>
+      <div class="header-badge" id="activeBadge">⚡ 0</div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="home">🏠 Asosiy</button>
+      <button class="tab" data-tab="channels">📢 Kanallar</button>
+      <button class="tab" data-tab="create">➕ Yaratish</button>
+      <button class="tab" data-tab="mybattles">📋 Mening</button>
+    </nav>
+
+    <!-- ══ HOME ══════════════════════════════════════════════ -->
+    <section id="tab-home" class="tab-content active">
+      <div class="stats-banner">
+        <div class="stats-item">
+          <div class="stats-num" id="statUsers">—</div>
+          <div class="stats-label">Foydalanuvchi</div>
+        </div>
+        <div class="stats-divider"></div>
+        <div class="stats-item">
+          <div class="stats-num" id="statActive">—</div>
+          <div class="stats-label">Faol battle</div>
+        </div>
+        <div class="stats-divider"></div>
+        <div class="stats-item">
+          <div class="stats-num" id="statVotes">—</div>
+          <div class="stats-label">Jami ovoz</div>
+        </div>
+      </div>
+      <div class="section-header">
+        <h2>⚡ Faol Battlelar</h2>
+        <p id="homeSubtitle">Yuklanmoqda…</p>
+      </div>
+      <div id="homeEmpty" class="empty-state hidden">
+        <div class="empty-icon">🏆</div>
+        <p>Hozircha faol battle yo'q</p>
+        <button class="btn-secondary" onclick="switchTab('create')">➕ Yaratish</button>
+      </div>
+      <div id="homeList" class="battles-list"></div>
+    </section>
+
+    <!-- ══ CHANNELS ══════════════════════════════════════════ -->
+    <section id="tab-channels" class="tab-content">
+      <div class="section-header">
+        <h2>📢 Mening Kanallarim</h2>
+        <p>Battle yaratish uchun kanalingizni qo'shing</p>
+      </div>
+
+      <div class="info-box">
+        <span class="info-box-icon">ℹ️</span>
+        <div>
+          <b>Xavfsizlik tizimi</b><br>
+          Faqat o'z kanalingizda battle yarata olasiz. Botni kanalingizga admin qilib, pastdan qo'shing.
+        </div>
+      </div>
+
+      <div class="field-group" style="margin-top:16px">
+        <label class="field-label">Kanal username</label>
+        <div class="field-wrap">
+          <span class="field-icon">📢</span>
+          <input type="text" id="ch-input" class="field-input" placeholder="@mening_kanalim"/>
+          <button type="button" id="addChannelBtn" class="field-action">Qo'shish</button>
+        </div>
+        <div id="chStatus" class="field-hint"></div>
+      </div>
+
+      <div id="channelsEmpty" class="empty-state hidden">
+        <div class="empty-icon">📢</div>
+        <p>Hali kanal qo'shilmagan</p>
+      </div>
+      <div id="channelsList" class="channels-list"></div>
+    </section>
+
+    <!-- ══ CREATE ════════════════════════════════════════════ -->
+    <section id="tab-create" class="tab-content">
+      <div class="section-header">
+        <h2>🎤 Yangi Battle</h2>
+        <p>Barcha majburiy maydonlarni to'ldiring</p>
+      </div>
+
+      <div id="createForm">
+        <div class="field-group">
+          <label class="field-label">Battle nomi <span class="req">*</span></label>
+          <div class="field-wrap">
+            <span class="field-icon">🎤</span>
+            <input type="text" id="f-name" class="field-input" placeholder="Yoz Battle 2025" maxlength="80"/>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Kanal tanlash <span class="req">*</span></label>
+          <div class="field-wrap">
+            <span class="field-icon">📢</span>
+            <select id="f-channel" class="field-input field-select">
+              <option value="">— Kanal tanlang —</option>
+            </select>
+          </div>
+          <div id="channelHint" class="field-hint">Avval "Kanallar" bo'limida kanal qo'shing</div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Maqsad ovozlar <span class="req">*</span></label>
+          <div class="field-wrap">
+            <span class="field-icon">🎯</span>
+            <input type="number" id="f-target" class="field-input" placeholder="100" min="1" max="100000"/>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Sovrin <span class="req">*</span></label>
+          <div class="field-wrap">
+            <span class="field-icon">🎁</span>
+            <textarea id="f-reward" class="field-input field-textarea" placeholder="1-o'ringa: Premium 3 oy&#10;2-o'ringa: Premium 1 oy" maxlength="400"></textarea>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Rasm URL <span class="optional">(ixtiyoriy)</span></label>
+          <div class="field-wrap">
+            <span class="field-icon">🖼️</span>
+            <input type="url" id="f-image" class="field-input" placeholder="https://example.com/image.jpg"/>
+          </div>
+        </div>
+
+        <div id="imagePreview" class="image-preview hidden">
+          <img id="previewImg" src="" alt="preview"/>
+          <button type="button" id="removeImage" class="remove-img">✕</button>
+        </div>
+
+        <div id="createError" class="error-msg hidden"></div>
+        <button id="createBtn" class="btn-primary">
+          <span id="createBtnText">🚀 Battle yaratish</span>
+          <div id="createSpinner" class="spinner hidden"></div>
+        </button>
+      </div>
+    </section>
+
+    <!-- ══ MY BATTLES ════════════════════════════════════════ -->
+    <section id="tab-mybattles" class="tab-content">
+      <div class="section-header">
+        <h2>📋 Mening Battlelarim</h2>
+        <p id="mySubtitle">Yuklanmoqda…</p>
+      </div>
+      <div id="myEmpty" class="empty-state hidden">
+        <div class="empty-icon">🎤</div>
+        <p>Hali battle yaratmadingiz</p>
+        <button class="btn-secondary" onclick="switchTab('create')">➕ Yaratish</button>
+      </div>
+      <div id="myList" class="battles-list"></div>
+    </section>
+
+  </div><!-- /main -->
+
+  <!-- ══ DETAIL MODAL ══════════════════════════════════════ -->
+  <div id="detailModal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeDetail()"></div>
+    <div class="modal-card modal-tall">
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+      <div id="detailContent"></div>
     </div>
+  </div>
 
-  </div><!-- /app -->
+  <!-- ══ SUCCESS MODAL ═════════════════════════════════════ -->
+  <div id="successModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-icon">🎉</div>
+      <h3>Battle yaratildi!</h3>
+      <p>Kanalga post muvaffaqiyatli yuborildi.</p>
+      <div id="modalDetails" class="modal-details"></div>
+      <button class="btn-primary" onclick="closeSuccess()">✅ Yopish</button>
+    </div>
+  </div>
 
-  <script src="app.js"></script>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
