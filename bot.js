@@ -46,21 +46,57 @@ bot.use(async (ctx, next) => {
 // ═══════════════════════════════════════════════════════════
 bot.start(async (ctx) => {
   const payload = ctx.startPayload || '';
-  db.upsertUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
+
+  db.upsertUser(
+    ctx.from.id,
+    ctx.from.username,
+    ctx.from.first_name
+  );
+
+  // vote-BATTLEID-USERID
+  if (payload.startsWith('vote-')) {
+    const parts = payload.split('-');
+
+    if (parts.length >= 3) {
+      const battleId = parts[1];
+      const participantId = parts[2];
+
+      return svc.handleRefVote(
+        bot,
+        ctx,
+        battleId,
+        participantId
+      );
+    }
+  }
 
   // ref_BATTLEID_USERID
-  if (payload.startsWith('vote-')) {
-    const raw   = payload.slice(4);
-    const idx   = raw.lastIndexOf('_');
-    const battleId      = raw.slice(0, idx);
-    const participantId = raw.slice(idx + 1);
-    return svc.handleRefVote(bot, ctx, battleId, participantId);
+  if (payload.startsWith('ref_')) {
+    const raw = payload.slice(4);
+    const idx = raw.lastIndexOf('_');
+
+    if (idx !== -1) {
+      const battleId = raw.slice(0, idx);
+      const participantId = raw.slice(idx + 1);
+
+      return svc.handleRefVote(
+        bot,
+        ctx,
+        battleId,
+        participantId
+      );
+    }
   }
 
   // join_BATTLEID
   if (payload.startsWith('join_')) {
-    return svc.joinBattle(bot, ctx, payload.slice(5));
+    return svc.joinBattle(
+      bot,
+      ctx,
+      payload.slice(5)
+    );
   }
+
 
   // vote-BATTLEID-TOKEN / vote_BATTLEID_TOKEN
   const vote = parseVotePayload(payload);
