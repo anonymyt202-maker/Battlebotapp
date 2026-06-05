@@ -35,7 +35,7 @@ function mainMenu() {
 function miniAppLink() {
   const username = String(process.env.BOT_USERNAME || '').replace('@', '');
   if (!username) return 'https://t.me/';
-  return `https://t.me/${username}?app=startapp`;
+  return `https://t.me/${username}?startapp=app`;
 }
 
 function webAppButton() {
