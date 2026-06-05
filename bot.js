@@ -49,7 +49,7 @@ bot.start(async (ctx) => {
   db.upsertUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
 
   // ref_BATTLEID_USERID
-  if (payload.startsWith('ref_')) {
+  if (payload.startsWith('vote-')) {
     const raw   = payload.slice(4);
     const idx   = raw.lastIndexOf('_');
     const battleId      = raw.slice(0, idx);
