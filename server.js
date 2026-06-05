@@ -4,12 +4,11 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
-
 const bot = require('./bot');
 const db = require('./database');
 const svc = require('./services/battleService');
 const { telegramAuthMiddleware } = require('./middleware/telegramAuth');
-const { battleCreateLimit } = require('./middleware/rateLimit');
+const { battleCreateLimit, voteLimit } = require('./middleware/rateLimit');
 
 const app = express();
 
@@ -41,7 +40,11 @@ function adminMw(req, res, next) {
 }
 
 app.get('/', (_, res) => {
-  res.json({ status: 'ok', app: 'Voice Battle', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    app: 'Voice Battle',
+    time: new Date().toISOString(),
+  });
 });
 
 app.get('/api/stats', (_, res) => {
@@ -66,11 +69,12 @@ app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
         username: user.username,
         first_name: tg.first_name || user.first_name,
         balance: user.balance,
+        blocked: user.blocked,
         created_at: user.created_at,
       },
       stats: {
         total_battles: battles.length,
-        active_battles: battles.filter(b => b.active).length,
+        active_battles: battles.filter(b => b.active === 1).length,
         channels: channels.length,
       },
       channels,
@@ -79,6 +83,8 @@ app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
         battle_name: b.battle_name,
         channel_id: b.channel_id,
         target_votes: b.target_votes,
+        min_win_votes: b.min_win_votes,
+        places_count: b.places_count,
         current_votes: b.current_votes,
         reward: b.reward,
         active: !!b.active,
@@ -91,7 +97,7 @@ app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
 });
 
 app.post('/api/check-channel', telegramAuthMiddleware, async (req, res) => {
-  let ch = normalizeChannel(req.body.channel);
+  const ch = normalizeChannel(req.body.channel);
   if (!ch) return res.status(400).json({ success: false, error: 'Kanal kerak' });
 
   try {
@@ -112,8 +118,8 @@ app.post('/api/add-channel', telegramAuthMiddleware, async (req, res) => {
 
     const chat = await bot.telegram.getChat(ch);
     const title = chat?.title || ch;
-    const added = db.addChannel(tg.id, ch, title);
 
+    const added = db.addChannel(tg.id, ch, title);
     db.upsertUser(tg.id, tg.username, tg.first_name);
 
     res.json({
@@ -129,7 +135,16 @@ app.post('/api/add-channel', telegramAuthMiddleware, async (req, res) => {
 app.post('/api/create-battle', telegramAuthMiddleware, battleCreateLimit, async (req, res) => {
   try {
     const tg = req.telegramUser;
-    const { battleName, channelId, targetVotes, reward, imageUrl } = req.body;
+    const {
+      battleName,
+      channelId,
+      targetVotes,
+      minWinVotes,
+      placesCount,
+      reward,
+      buttonText,
+      imageUrl,
+    } = req.body;
 
     if (!battleName?.trim()) return res.status(400).json({ success: false, error: 'Battle nomi kerak' });
     if (!channelId?.trim()) return res.status(400).json({ success: false, error: 'Kanal kerak' });
@@ -140,10 +155,10 @@ app.post('/api/create-battle', telegramAuthMiddleware, battleCreateLimit, async 
 
     const ch = normalizeChannel(channelId);
 
-    // owner + bot admin check
+    // faqat kanal owneri va bot admin bo'lsa battle yaratiladi
     await svc.assertCanManageChannel(bot, ch, tg.id);
 
-    // Auto-add the channel for the owner
+    // owner channels ga avtomatik qo'shib qo'yiladi
     try {
       const chat = await bot.telegram.getChat(ch);
       const title = chat?.title || ch;
@@ -157,7 +172,10 @@ app.post('/api/create-battle', telegramAuthMiddleware, battleCreateLimit, async 
       battleName: battleName.trim(),
       channelId: ch,
       targetVotes: parseInt(targetVotes, 10),
+      minWinVotes: parseInt(minWinVotes, 10) || 1,
+      placesCount: parseInt(placesCount, 10) || 3,
       reward: reward.trim(),
+      buttonText: buttonText?.trim() || '🔥 Ovoz berish',
       imageUrl: imageUrl?.trim() || null,
     });
 
@@ -184,6 +202,8 @@ app.get('/api/battle/:id', telegramAuthMiddleware, (req, res) => {
         battle_name: battle.battle_name,
         channel_id: battle.channel_id,
         target_votes: battle.target_votes,
+        min_win_votes: battle.min_win_votes,
+        places_count: battle.places_count,
         current_votes: battle.current_votes,
         reward: battle.reward,
         active: !!battle.active,
@@ -206,6 +226,8 @@ app.get('/api/active-battles', telegramAuthMiddleware, (req, res) => {
       battle_name: b.battle_name,
       channel_id: b.channel_id,
       target_votes: b.target_votes,
+      min_win_votes: b.min_win_votes,
+      places_count: b.places_count,
       current_votes: b.current_votes,
       reward: b.reward,
       created_at: b.created_at,
@@ -230,25 +252,43 @@ app.post('/api/join-battle', telegramAuthMiddleware, async (req, res) => {
     db.upsertUser(tg.id, tg.username, tg.first_name);
 
     if (db.isParticipant(battleId, tg.id)) {
-      return res.json({ success: true, already: true, ref_link: svc.buildRefLink(battleId, tg.id) });
+      return res.json({
+        success: true,
+        already: true,
+        ref_link: svc.buildRefLink(battleId, tg.id),
+      });
     }
 
     db.joinBattle(battleId, tg.id, tg.username || String(tg.id));
-    res.json({ success: true, already: false, ref_link: svc.buildRefLink(battleId, tg.id) });
+
+    await svc.updateChannelPost(bot, db.getBattle(battleId));
+
+    res.json({
+      success: true,
+      already: false,
+      ref_link: svc.buildRefLink(battleId, tg.id),
+    });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
-app.post('/api/vote', telegramAuthMiddleware, async (req, res) => {
+app.post('/api/vote', telegramAuthMiddleware, voteLimit, async (req, res) => {
   try {
     const tg = req.telegramUser;
-    const { battleId, participantId } = req.body;
-    if (!battleId || !participantId) {
-      return res.status(400).json({ success: false, error: 'battleId va participantId kerak' });
+    const { battleId, participantId, participantUsername } = req.body;
+    const participant = participantId || participantUsername;
+
+    if (!battleId || !participant) {
+      return res.status(400).json({ success: false, error: 'battleId va participant kerak' });
     }
-    const result = await svc.handleRefVote(bot, { from: tg, reply: () => {} }, battleId, participantId);
-    res.json({ success: true, result });
+
+    db.upsertUser(tg.id, tg.username, tg.first_name);
+
+    const fakeCtx = { from: tg, reply: () => null };
+    const result = await svc.handleRefVote(bot, fakeCtx, battleId, participant);
+
+    res.json(result || { success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -272,6 +312,7 @@ app.get('/api/admin/channels', telegramAuthMiddleware, adminMw, (_, res) => {
 app.post('/api/admin/close', telegramAuthMiddleware, adminMw, async (req, res) => {
   const { battleId } = req.body;
   if (!battleId) return res.status(400).json({ success: false, error: 'battleId kerak' });
+
   try {
     await svc.finishBattle(bot, battleId);
     res.json({ success: true });
@@ -289,7 +330,9 @@ app.post('/api/admin/delete', telegramAuthMiddleware, adminMw, async (req, res) 
 
   try {
     if (battle.message_id) {
-      try { await bot.telegram.deleteMessage(battle.channel_id, battle.message_id); } catch (_) {}
+      try {
+        await bot.telegram.deleteMessage(battle.channel_id, battle.message_id);
+      } catch (_) {}
     }
     db.deleteBattle(battleId);
     res.json({ success: true });
