@@ -170,4 +170,4 @@ bot.catch((err, ctx) => {
   } catch (_) {}
 });
 
-module.exports = bot;= bot;
+module.exports = bot;
