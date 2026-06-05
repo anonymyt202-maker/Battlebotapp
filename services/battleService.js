@@ -2,14 +2,21 @@
 
 const db = require('../database');
 
-const BOT = () => process.env.BOT_USERNAME || 'your_bot';
+const BOT_USERNAME = () => process.env.BOT_USERNAME || 'your_bot';
+
+function normalizeChannel(channelId) {
+  let ch = String(channelId || '').trim();
+  if (!ch) return ch;
+  if (!ch.startsWith('@') && !ch.startsWith('-')) ch = '@' + ch;
+  return ch;
+}
 
 function generateBattleId() {
   return Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 }
 
 function buildRefLink(battleId, userId) {
-  return `https://t.me/${BOT()}?start=ref_${battleId}_${userId}`;
+  return `https://t.me/${BOT_USERNAME()}?start=ref_${battleId}_${userId}`;
 }
 
 function medal(i) {
@@ -21,27 +28,25 @@ function medal(i) {
 
 function buildRatingLines(battleId, limit = 10) {
   const top = db.getTopParticipants(battleId, limit);
-  if (!top.length) return 'Hali ishtirokchilar yo\'q\n';
-  return top.map((p, i) =>
-    `${medal(i)} @${p.username || 'noname'} — ${p.votes} 📦`
-  ).join('\n');
+  if (!top || top.length === 0) return 'Hali ishtirokchilar yo\'q';
+  return top.map((p, i) => `${medal(i)} @${p.username || 'noname'} — ${p.votes} 📦`).join('\n');
 }
 
-// ─── Kanal posti (aktiv) ─────────────────────────────────────
 function buildPostText(battle) {
-  const rating = buildRatingLines(battle.id);
+  const rating = buildRatingLines(battle.id, 10);
   return (
     `🏆 <b>BATTLE BOSHLANDI</b>\n\n` +
-    `❗ <b>Shartlar:</b>\n• Kanalga obuna bo'lish\n• Do'stlarni chaqirish\n\n` +
+    `❗ <b>Shartlar:</b>\n` +
+    `• Kanalga obuna bo\'lish\n` +
+    `• Do\'stlarni chaqirish\n\n` +
     `🎁 <b>Sovrin:</b>\n${battle.reward}\n\n` +
     `🎯 <b>Maqsad:</b> ${battle.target_votes} ta ovoz\n\n` +
     `📈 <b>Reyting:</b>\n\n${rating}`
   );
 }
 
-// ─── Kanal posti (yakunlangan) ───────────────────────────────
 function buildFinishedText(battle) {
-  const rating = buildRatingLines(battle.id);
+  const rating = buildRatingLines(battle.id, 10);
   return (
     `🏆 <b>BATTLE YAKUNLANDI</b>\n\n` +
     `📈 <b>Yakuniy natijalar:</b>\n\n${rating}\n\n` +
@@ -52,56 +57,123 @@ function buildFinishedText(battle) {
 function buildActiveKeyboard(battle) {
   return {
     inline_keyboard: [
-      [{ text: '➕ Battlega qo\'shilish', url: `https://t.me/${BOT()}?start=join_${battle.id}` }],
-      [{ text: '🔄 Reytingni yangilash', callback_data: `refresh_${battle.id}` }],
-    ]
+      [
+        {
+          text: '➕ Battlega qo\'shilish',
+          url: `https://t.me/${BOT_USERNAME()}?start=join_${battle.id}`,
+        },
+      ],
+      [
+        {
+          text: '🔄 Reytingni yangilash',
+          callback_data: `refresh_${battle.id}`,
+        },
+      ],
+    ],
   };
 }
 
-async function _editPost(bot, battle, text, keyboard) {
-  if (!battle.message_id || !battle.channel_id) return;
+async function safeEditPost(bot, battle, text, keyboard) {
+  if (!battle || !battle.message_id || !battle.channel_id) return;
   try {
     if (battle.image_url) {
-      await bot.telegram.editMessageCaption(
-        battle.channel_id, battle.message_id, undefined, text,
-        { parse_mode: 'HTML', reply_markup: keyboard }
-      );
+      await bot.telegram.editMessageCaption(battle.channel_id, battle.message_id, undefined, text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
     } else {
-      await bot.telegram.editMessageText(
-        battle.channel_id, battle.message_id, undefined, text,
-        { parse_mode: 'HTML', reply_markup: keyboard }
-      );
+      await bot.telegram.editMessageText(battle.channel_id, battle.message_id, undefined, text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
     }
   } catch (e) {
-    if (!e.message?.includes('not modified')) console.log('[editPost]', e.message);
+    if (!String(e.message || '').includes('message is not modified')) {
+      console.log('[safeEditPost]', e.message);
+    }
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-//   BATTLE YARATISH
-// ═══════════════════════════════════════════════════════════
-async function createNewBattle(bot, { ownerId, battleName, channelId, targetVotes, reward, imageUrl }) {
-  // Xavfsizlik: kanal foydalanuvchiga tegishli bo'lishi shart
-  if (!db.isChannelOwner(ownerId, channelId)) {
-    throw new Error('Siz bu kanalga battle yarata olmaysiz! Avval kanalingizni qo\'shing.');
+async function assertCanManageChannel(bot, channelId, userId) {
+  const ch = normalizeChannel(channelId);
+  if (!ch) throw new Error('Kanal bo\'sh');
+
+  const me = await bot.telegram.getMe();
+  const [botMember, userMember] = await Promise.all([
+    bot.telegram.getChatMember(ch, me.id),
+    bot.telegram.getChatMember(ch, userId),
+  ]);
+
+  const botOk = ['administrator', 'creator'].includes(botMember.status);
+  const userOk = userMember.status === 'creator';
+
+  if (!botOk) throw new Error('Bot kanalda admin emas');
+  if (!userOk) throw new Error('Bu kanal sizniki emas. Faqat kanal owneri battle yarata oladi.');
+
+  return {
+    channelId: ch,
+    botStatus: botMember.status,
+    userStatus: userMember.status,
+  };
+}
+
+async function createNewBattle(
+  bot,
+  {
+    ownerId,
+    battleName,
+    channelId,
+    targetVotes,
+    reward,
+    imageUrl,
   }
+) {
+  const ch = normalizeChannel(channelId);
+  await assertCanManageChannel(bot, ch, ownerId);
 
   const battleId = generateBattleId();
-  db.createBattle({ id: battleId, ownerId, battleName, channelId, targetVotes, reward, imageUrl });
+  const battleTitle = String(battleName || '').trim();
+  const battleReward = String(reward || '').trim();
+  const parsedTarget = parseInt(targetVotes, 10);
+
+  if (!battleTitle) throw new Error('Battle nomi bo\'sh');
+  if (!battleReward) throw new Error('Mukofot bo\'sh');
+  if (!Number.isInteger(parsedTarget) || parsedTarget < 1) throw new Error('Maqsad ovozlar soni noto\'g\'ri');
+
+  try {
+    const chat = await bot.telegram.getChat(ch);
+    const title = chat?.title || ch;
+    db.addChannel(ownerId, ch, title);
+  } catch (_) {}
+
+  db.createBattle({
+    id: battleId,
+    ownerId,
+    battleName: battleTitle,
+    channelId: ch,
+    targetVotes: parsedTarget,
+    reward: battleReward,
+    imageUrl: imageUrl ? String(imageUrl).trim() : null,
+  });
 
   const battle = db.getBattle(battleId);
-  const text   = buildPostText(battle);
-  const kb     = buildActiveKeyboard(battle);
+  if (!battle) throw new Error('Battle saqlanmadi');
+
+  const text = buildPostText(battle);
+  const keyboard = buildActiveKeyboard(battle);
 
   let msg;
   try {
-    if (imageUrl) {
-      msg = await bot.telegram.sendPhoto(channelId, imageUrl, {
-        caption: text, parse_mode: 'HTML', reply_markup: kb
+    if (battle.image_url) {
+      msg = await bot.telegram.sendPhoto(ch, battle.image_url, {
+        caption: text,
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
       });
     } else {
-      msg = await bot.telegram.sendMessage(channelId, text, {
-        parse_mode: 'HTML', reply_markup: kb
+      msg = await bot.telegram.sendMessage(ch, text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
       });
     }
   } catch (e) {
@@ -113,59 +185,34 @@ async function createNewBattle(bot, { ownerId, battleName, channelId, targetVote
   return db.getBattle(battleId);
 }
 
-// ═══════════════════════════════════════════════════════════
-//   KANAL QO'SHISH (bot orqali tekshirib)
-// ═══════════════════════════════════════════════════════════
 async function addChannelForUser(bot, ctx, channelUsername) {
   const userId = ctx.from.id;
-  let ch = channelUsername.trim();
-  if (!ch.startsWith('@') && !ch.startsWith('-')) ch = '@' + ch;
+  const ch = normalizeChannel(channelUsername);
+  if (!ch) return ctx.reply('❌ Kanal kiriting.');
 
-  // Bot admin ekanligini tekshir
-  let title = ch;
   try {
-    const me   = await bot.telegram.getMe();
-    const mbr  = await bot.telegram.getChatMember(ch, me.id);
-    if (!['administrator', 'creator'].includes(mbr.status)) {
-      return ctx.reply(
-        `❌ <b>Bot bu kanalda admin emas!</b>\n\n` +
-        `Avval botni ${ch} kanaliga admin qiling, keyin qayta urinib ko'ring.`,
-        { parse_mode: 'HTML' }
-      );
-    }
+    await assertCanManageChannel(bot, ch, userId);
     const chat = await bot.telegram.getChat(ch);
-    title = chat.title || ch;
+    const title = chat?.title || ch;
+
+    const added = db.addChannel(userId, ch, title);
+    if (!added) {
+      return ctx.reply(`ℹ️ <b>${title}</b> kanali allaqachon qo'shilgan.`, { parse_mode: 'HTML' });
+    }
+
+    return ctx.reply(`✅ <b>${title}</b> kanali qo'shildi.\n\nEndi shu kanalda battle yarata olasiz.`, { parse_mode: 'HTML' });
   } catch (e) {
-    return ctx.reply(`❌ Kanal topilmadi yoki kirish imkoni yo'q: ${e.message}`);
+    return ctx.reply(`❌ ${e.message}`, { parse_mode: 'HTML' });
   }
-
-  // Foydalanuvchi bu kanalda admin yoki creator ekanligini tekshirib bo'lmaydi
-  // (Telegram API faqat botlar uchun ishlaydi), shuning uchun bot orqali
-  // forward yoki post tekshirish sxemasi ishlatiladi.
-  // Sodda variant: ishonchga asoslanib qo'shamiz, lekin bot admin bo'lishi kafolat.
-
-  const added = db.addChannel(userId, ch, title);
-  if (!added) {
-    return ctx.reply(`ℹ️ <b>${title}</b> kanali allaqachon ro'yxatda.`, { parse_mode: 'HTML' });
-  }
-
-  ctx.reply(
-    `✅ <b>${title}</b> kanali muvaffaqiyatli qo'shildi!\n\n` +
-    `Endi bu kanalda battle yarata olasiz.`,
-    { parse_mode: 'HTML' }
-  );
 }
 
-// ═══════════════════════════════════════════════════════════
-//   BATTLEGA QO'SHILISH
-// ═══════════════════════════════════════════════════════════
 async function joinBattle(bot, ctx, battleId) {
-  const userId   = ctx.from.id;
+  const userId = ctx.from.id;
   const username = ctx.from.username || String(userId);
   db.upsertUser(userId, ctx.from.username, ctx.from.first_name);
 
   const battle = db.getBattle(battleId);
-  if (!battle)        return ctx.reply('❌ Battle topilmadi.');
+  if (!battle) return ctx.reply('❌ Battle topilmadi.');
   if (!battle.active) return ctx.reply('❌ Bu battle tugagan.');
 
   const already = db.isParticipant(battleId, userId);
@@ -179,8 +226,7 @@ async function joinBattle(bot, ctx, battleId) {
     );
   }
 
-  // Obuna tekshirish
-  const subOk = await _checkChannelSub(bot, battle.channel_id, userId);
+  const subOk = await checkChannelSub(bot, battle.channel_id, userId);
   if (!subOk) {
     const ch = battle.channel_id.replace('@', '');
     return ctx.reply(
@@ -190,8 +236,8 @@ async function joinBattle(bot, ctx, battleId) {
           inline_keyboard: [
             [{ text: `📢 ${battle.channel_id} ga obuna`, url: `https://t.me/${ch}` }],
             [{ text: '✅ Obunani tekshirish', callback_data: `chk_join_${battleId}` }],
-          ]
-        }
+          ],
+        },
       }
     );
   }
@@ -199,7 +245,7 @@ async function joinBattle(bot, ctx, battleId) {
   db.joinBattle(battleId, userId, username);
   const link = buildRefLink(battleId, userId);
 
-  await ctx.reply(
+  return ctx.reply(
     `✅ <b>Siz battlega qo'shildingiz!</b>\n\n` +
     `🎤 <i>${battle.battle_name}</i>\n\n` +
     `🔗 <b>Sizning referal havolangiz:</b>\n<code>${link}</code>\n\n` +
@@ -208,32 +254,32 @@ async function joinBattle(bot, ctx, battleId) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-//   REFERAL ORQALI OVOZ BERISH
-// ═══════════════════════════════════════════════════════════
 async function handleRefVote(bot, ctx, battleId, participantUserId) {
-  const voterId   = ctx.from.id;
+  const voterId = ctx.from.id;
   const voterName = ctx.from.username || String(voterId);
+  const pid = Number(participantUserId);
+  if (!Number.isInteger(pid)) return ctx.reply('❌ Noto‘g‘ri havola.');
+
   db.upsertUser(voterId, ctx.from.username, ctx.from.first_name);
 
   const battle = db.getBattle(battleId);
-  if (!battle)        return ctx.reply('❌ Battle topilmadi.');
+  if (!battle) return ctx.reply('❌ Battle topilmadi.');
   if (!battle.active) return ctx.reply('❌ Bu battle tugagan.');
 
-  if (voterId === parseInt(participantUserId)) {
+  if (voterId === pid) {
     return ctx.reply('❌ O\'z havolangizga ovoz bera olmaysiz!');
   }
+
   if (db.hasVoted(battleId, voterId)) {
     return ctx.reply('❌ Siz bu battleda allaqachon ovoz bergansiz!');
   }
 
-  const participant = db.getParticipant(battleId, parseInt(participantUserId));
+  const participant = db.getParticipant(battleId, pid);
   if (!participant) {
     return ctx.reply('❌ Bu ishtirokchi battleda topilmadi.');
   }
 
-  // Obuna tekshirish
-  const subOk = await _checkChannelSub(bot, battle.channel_id, voterId);
+  const subOk = await checkChannelSub(bot, battle.channel_id, voterId);
   if (!subOk) {
     const ch = battle.channel_id.replace('@', '');
     return ctx.reply(
@@ -243,8 +289,8 @@ async function handleRefVote(bot, ctx, battleId, participantUserId) {
           inline_keyboard: [
             [{ text: `📢 ${battle.channel_id} ga obuna`, url: `https://t.me/${ch}` }],
             [{ text: '✅ Tekshirish', callback_data: `chk_vote_${battleId}_${participantUserId}` }],
-          ]
-        }
+          ],
+        },
       }
     );
   }
@@ -253,7 +299,7 @@ async function handleRefVote(bot, ctx, battleId, participantUserId) {
   if (!saved) return ctx.reply('❌ Siz allaqachon ovoz bergansiz!');
 
   db.incrementParticipantVotes(participant.id);
-  const counts      = db.incrementBattleVotes(battleId);
+  const counts = db.incrementBattleVotes(battleId);
   const freshBattle = db.getBattle(battleId);
 
   await ctx.reply(
@@ -272,8 +318,8 @@ async function handleRefVote(bot, ctx, battleId, participantUserId) {
 
 async function updateChannelPost(bot, battle) {
   const text = buildPostText(battle);
-  const kb   = buildActiveKeyboard(battle);
-  await _editPost(bot, battle, text, kb);
+  const kb = buildActiveKeyboard(battle);
+  await safeEditPost(bot, battle, text, kb);
 }
 
 async function finishBattle(bot, battleId) {
@@ -282,7 +328,7 @@ async function finishBattle(bot, battleId) {
   if (!battle) return;
 
   const text = buildFinishedText(battle);
-  await _editPost(bot, battle, text, { inline_keyboard: [] });
+  await safeEditPost(bot, battle, text, { inline_keyboard: [] });
 
   try {
     await bot.telegram.sendMessage(
@@ -296,15 +342,16 @@ async function finishBattle(bot, battleId) {
   } catch (e) {
     console.log('[finishBattle notify]', e.message);
   }
+
   return battle;
 }
 
-async function _checkChannelSub(bot, channelId, userId) {
+async function checkChannelSub(bot, channelId, userId) {
   try {
     const m = await bot.telegram.getChatMember(channelId, userId);
     return !['left', 'kicked'].includes(m.status);
   } catch (e) {
-    return true; // kanal private yoki bot admin emas → skip
+    return false;
   }
 }
 
@@ -315,6 +362,7 @@ module.exports = {
   buildFinishedText,
   buildActiveKeyboard,
   buildRatingLines,
+  assertCanManageChannel,
   createNewBattle,
   addChannelForUser,
   joinBattle,
