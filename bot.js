@@ -7,33 +7,9 @@ const svc = require('./services/battleService');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-function getMiniAppUrl() {
-  const botUsername = (process.env.BOT_USERNAME || '').replace(/^@/, '');
-  if (botUsername) {
-    return `https://t.me/${botUsername}?startapp=miniapp`;
-  }
-  const base = (process.env.MINIAPP_URL || '').replace(/\/$/, '');
-  return base ? `${base}/miniapp` : '/miniapp';
-}
-
-function parseVotePayload(payload = '') {
-  const raw = String(payload || '').trim();
-  if (!raw) return null;
-
-  const normalized = raw.replace(/^vote[-_]/i, '');
-  if (normalized === raw) return null;
-
-  const lastSep = normalized.lastIndexOf('_');
-  if (lastSep === -1) return null;
-
-  const battleId = normalized.slice(0, lastSep);
-  const participantToken = normalized.slice(lastSep + 1);
-  if (!battleId || !participantToken) return null;
-
-  return { battleId, participantToken };
-}
-
-// ─── Bloklangan foydalanuvchilar filteri ──────────────────────
+// ═══════════════════════════════════════════════════════════
+//   1. BLOKLANGAN USER FILTERI
+// ═══════════════════════════════════════════════════════════
 bot.use(async (ctx, next) => {
   if (!ctx.from) return next();
   const user = db.getUser(ctx.from.id);
@@ -42,79 +18,76 @@ bot.use(async (ctx, next) => {
 });
 
 // ═══════════════════════════════════════════════════════════
+//   2. MAJBURIY OBUNA TEKSHIRISH MIDDLEWARE
+// ═══════════════════════════════════════════════════════════
+bot.use(async (ctx, next) => {
+  if (!ctx.from) return next();
+  // Admin uchun skip
+  if (db.isAdmin(ctx.from.id)) return next();
+  // "Obunani tekshirish" tugmasi uchun skip
+  const cbData = ctx.callbackQuery?.data || '';
+  if (cbData === 'check_required_sub') return next();
+
+  const required = db.getRequiredChannels();
+  for (const ch of required) {
+    try {
+      const m = await bot.telegram.getChatMember(ch.channel_id, ctx.from.id);
+      if (['left', 'kicked'].includes(m.status)) {
+        const chClean = ch.channel_id.replace('@', '');
+        const replyFn = ctx.reply?.bind(ctx) || ctx.answerCbQuery?.bind(ctx);
+        await ctx.reply(
+          `❗ <b>Botdan foydalanish uchun kanalga obuna bo'ling!</b>\n\n` +
+          `📢 ${ch.title || ch.channel_id}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: `📢 ${ch.title || ch.channel_id}`, url: `https://t.me/${chClean}` }],
+                [{ text: '✅ Obunani tekshirish', callback_data: 'check_required_sub' }]
+              ]
+            }
+          }
+        );
+        return; // next() chaqirilmaydi
+      }
+    } catch (e) { /* kanal yopiq yoki bot admin emas → skip */ }
+  }
+  return next();
+});
+
+// ═══════════════════════════════════════════════════════════
 //   /start
 // ═══════════════════════════════════════════════════════════
 bot.start(async (ctx) => {
   const payload = ctx.startPayload || '';
+  db.upsertUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
 
-  db.upsertUser(
-    ctx.from.id,
-    ctx.from.username,
-    ctx.from.first_name
-  );
-
-  // vote-BATTLEID-USERID
-  if (payload.startsWith('vote-')) {
-    const parts = payload.split('-');
-
-    if (parts.length >= 3) {
-      const battleId = parts[1];
-      const participantId = parts[2];
-
-      return svc.handleRefVote(
-        bot,
-        ctx,
-        battleId,
-        participantId
-      );
-    }
-  }
-
-  // ref_BATTLEID_USERID
+  // ref_BATTLEID_USERID — ovoz berish
   if (payload.startsWith('ref_')) {
-    const raw = payload.slice(4);
-    const idx = raw.lastIndexOf('_');
-
-    if (idx !== -1) {
-      const battleId = raw.slice(0, idx);
-      const participantId = raw.slice(idx + 1);
-
-      return svc.handleRefVote(
-        bot,
-        ctx,
-        battleId,
-        participantId
-      );
-    }
+    const raw   = payload.slice(4);
+    const idx   = raw.lastIndexOf('_');
+    const battleId      = raw.slice(0, idx);
+    const participantId = raw.slice(idx + 1);
+    return svc.handleRefVote(bot, ctx, battleId, participantId);
   }
 
-  // join_BATTLEID
+  // join_BATTLEID — battlega qo'shilish
   if (payload.startsWith('join_')) {
-    return svc.joinBattle(
-      bot,
-      ctx,
-      payload.slice(5)
-    );
+    return svc.joinBattle(bot, ctx, payload.slice(5));
   }
 
-
-  // vote-BATTLEID-TOKEN / vote_BATTLEID_TOKEN
-  const vote = parseVotePayload(payload);
-  if (vote) {
-    return svc.handleRefVote(bot, ctx, vote.battleId, vote.participantToken);
-  }
-
-  const miniUrl = getMiniAppUrl();
+  const miniUrl = (process.env.MINIAPP_URL || '') + '/miniapp';
   return ctx.reply(
     `👋 Salom, <b>${ctx.from.first_name}</b>!\n\n` +
     `🏆 <b>Voice Battle Bot</b>ga xush kelibsiz!\n\n` +
-    `🎤 Battle yaratish yoki ishtirok etish uchun pastdagi tugmani bosing:`,
+    `🎤 Battle yaratish uchun Mini App ni oching.\n` +
+    `📢 Kanalingizni botga admin qilib qo'shing — kanal avtomatik ro'yxatdan o'tadi.`,
     {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🎤 Battle yaratish', url: miniUrl }],
-          [{ text: '📢 Kanal qo\'shish', callback_data: 'add_channel_start' }],
+          [{ text: '🎤 Battle yaratish', web_app: { url: miniUrl } }],
+          [{ text: '📋 Kanallarim', callback_data: 'my_channels' }],
         ]
       }
     }
@@ -122,73 +95,108 @@ bot.start(async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//   /mychannels — Mening kanallarim
+//   MY_CHAT_MEMBER — Kanal avtomatik ro'yxatdan o'tish
+//   (Bot kanalga admin qilib qo'shilganda ishlaydi)
+// ═══════════════════════════════════════════════════════════
+bot.on('my_chat_member', async (ctx) => {
+  const upd       = ctx.update.my_chat_member;
+  const newMember = upd.new_chat_member;
+  const chat      = upd.chat;
+  const addedBy   = upd.from;
+
+  // Faqat kanal uchun va faqat admin/creator bo'lganda
+  if (
+    chat.type === 'channel' &&
+    ['administrator', 'creator'].includes(newMember.status)
+  ) {
+    db.upsertUser(addedBy.id, addedBy.username, addedBy.first_name);
+
+    const channelId = chat.username ? '@' + chat.username : String(chat.id);
+    const title     = chat.title || channelId;
+
+    const added = db.addChannel(addedBy.id, channelId, title);
+
+    try {
+      if (added) {
+        await bot.telegram.sendMessage(
+          addedBy.id,
+          `✅ <b>${title}</b> kanali avtomatik qo'shildi!\n\n` +
+          `Endi bu kanalda battle yarata olasiz. 🎤\n\n` +
+          `/mychannels — kanallaringizni ko'rish`,
+          { parse_mode: 'HTML' }
+        );
+      } else {
+        await bot.telegram.sendMessage(
+          addedBy.id,
+          `ℹ️ <b>${title}</b> kanali allaqachon ro'yxatda.`,
+          { parse_mode: 'HTML' }
+        );
+      }
+    } catch (e) { console.log('[my_chat_member] notify:', e.message); }
+  }
+
+  // Admin olib tashlanganda kanaldan o'chirish
+  if (
+    chat.type === 'channel' &&
+    ['left', 'kicked', 'member'].includes(newMember.status)
+  ) {
+    const channelId = chat.username ? '@' + chat.username : String(chat.id);
+    db.removeChannel(addedBy.id, channelId);
+    try {
+      await bot.telegram.sendMessage(
+        addedBy.id,
+        `⚠️ Bot <b>${chat.title || channelId}</b> kanaldan admin huquqi olindi.\n` +
+        `Kanal ro'yxatdan olib tashlandi.`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (e) {}
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//   /mychannels
 // ═══════════════════════════════════════════════════════════
 bot.command('mychannels', (ctx) => {
   db.upsertUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   const channels = db.getUserChannels(ctx.from.id);
   if (!channels.length) {
     return ctx.reply(
-      '📢 Sizda hali qo\'shilgan kanal yo\'q.\n\n/addchannel @kanal_username — kanal qo\'shish',
+      '📢 Sizda hali qo\'shilgan kanal yo\'q.\n\n' +
+      'Botni kanalingizga admin qilib qo\'shing — kanal avtomatik ro\'yxatdan o\'tadi.',
       { parse_mode: 'HTML' }
     );
   }
   const lines = channels.map((c, i) =>
-    `${i + 1}. <b>${c.title || c.channel_id}</b> — <code>${c.channel_id}</code>`
-  ).join('\n');
-  ctx.reply(
-    `📢 <b>Sizning kanallaringiz:</b>\n\n${lines}\n\n` +
-    `Kanal qo'shish: /addchannel @kanal_username\n` +
-    `Kanal o'chirish: /removechannel @kanal_username`,
-    { parse_mode: 'HTML' }
-  );
+    `${i + 1}. <b>${c.title || c.channel_id}</b>\n   <code>${c.channel_id}</code>`
+  ).join('\n\n');
+  ctx.reply(`📢 <b>Sizning kanallaringiz:</b>\n\n${lines}`, { parse_mode: 'HTML' });
 });
 
 // ═══════════════════════════════════════════════════════════
-//   /addchannel @username
-// ═══════════════════════════════════════════════════════════
-bot.command('addchannel', async (ctx) => {
-  db.upsertUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
-  const parts = ctx.message.text.trim().split(/\s+/);
-  if (!parts[1]) {
-    return ctx.reply(
-      '❌ Foydalanish: <code>/addchannel @kanal_username</code>\n\n' +
-      '📌 Bot kanalda admin bo\'lishi kerak!',
-      { parse_mode: 'HTML' }
-    );
-  }
-  await svc.addChannelForUser(bot, ctx, parts[1]);
-});
-
-// ═══════════════════════════════════════════════════════════
-//   /removechannel @username
-// ═══════════════════════════════════════════════════════════
-bot.command('removechannel', (ctx) => {
-  const parts = ctx.message.text.trim().split(/\s+/);
-  if (!parts[1]) return ctx.reply('Foydalanish: /removechannel @kanal_username');
-  let ch = parts[1].trim();
-  if (!ch.startsWith('@')) ch = '@' + ch;
-  db.removeChannel(ctx.from.id, ch);
-  ctx.reply(`🗑 <code>${ch}</code> kanallar ro'yxatidan olib tashlandi.`, { parse_mode: 'HTML' });
-});
-
-// ═══════════════════════════════════════════════════════════
-//   callback_query
+//   CALLBACK QUERY
 // ═══════════════════════════════════════════════════════════
 bot.on('callback_query', async (ctx) => {
   const data = ctx.callbackQuery.data || '';
   db.upsertUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
 
-  // Kanal qo'shish boshlash
-  if (data === 'add_channel_start') {
+  // Majburiy obuna tekshirish tugmasi
+  if (data === 'check_required_sub') {
+    return ctx.answerCbQuery('✅ Tekshirildi! Qayta urinib ko\'ring.');
+  }
+
+  // Kanallarim
+  if (data === 'my_channels') {
     await ctx.answerCbQuery();
-    return ctx.reply(
-      `📢 <b>Kanal qo'shish</b>\n\n` +
-      `Botni kanalingizga admin qilib qo'shib, keyin:\n\n` +
-      `<code>/addchannel @kanal_username</code>\n\n` +
-      `ni yuboring.`,
-      { parse_mode: 'HTML' }
-    );
+    const channels = db.getUserChannels(ctx.from.id);
+    if (!channels.length) {
+      return ctx.reply(
+        '📢 Kanal yo\'q.\n\nBotni kanalingizga admin qilib qo\'shing — kanal avtomatik qo\'shiladi.'
+      );
+    }
+    const lines = channels.map((c, i) =>
+      `${i + 1}. <b>${c.title || c.channel_id}</b> — <code>${c.channel_id}</code>`
+    ).join('\n');
+    return ctx.reply(`📢 <b>Kanallaringiz:</b>\n\n${lines}`, { parse_mode: 'HTML' });
   }
 
   // Reyting yangilash
@@ -232,17 +240,21 @@ function requireAdmin(ctx, next) {
 bot.command('admin', requireAdmin, (ctx) => {
   ctx.reply(
     `🛡 <b>Admin Panel</b>\n\n` +
-    `/admin_stats — Statistika\n` +
-    `/admin_battles — Faol battlelar\n` +
-    `/admin_close ID — Battle yopish\n` +
-    `/admin_delete ID — Battle o'chirish\n` +
-    `/admin_rating ID — Reyting\n` +
-    `/admin_block UID — Bloklash\n` +
-    `/admin_unblock UID — Blokdan chiqarish\n` +
-    `/admin_broadcast MATN — Broadcast\n` +
-    `/admin_users — Users.json yuklash\n` +
-    `/admin_channels — Barcha kanallar\n` +
-    `/admin_addchannel @username — Kanal qo'shish`,
+    `📊 /admin_stats — Statistika\n` +
+    `⚡ /admin_battles — Faol battlelar\n` +
+    `🔒 /admin_close ID — Battle yopish\n` +
+    `🗑 /admin_delete ID — Battle o'chirish\n` +
+    `📈 /admin_rating ID — Reyting ko'rish\n` +
+    `👤 /admin_users — Users.json yuklash\n` +
+    `📢 /admin_channels — Barcha kanallar\n\n` +
+    `<b>Majburiy obuna kanali:</b>\n` +
+    `/admin_addchannel @kanal — kanal qo'shish\n` +
+    `/admin_removechannel @kanal — olib tashlash\n` +
+    `/admin_reqchannels — ro'yxat\n\n` +
+    `<b>Foydalanuvchilar:</b>\n` +
+    `/admin_block UID\n` +
+    `/admin_unblock UID\n` +
+    `/admin_broadcast MATN`,
     { parse_mode: 'HTML' }
   );
 });
@@ -258,56 +270,91 @@ bot.command('admin_stats', requireAdmin, (ctx) => {
     `✅ Yakunlangan: <b>${s.finished}</b>\n` +
     `📦 Ovozlar: <b>${s.votes}</b>\n` +
     `👥 Ishtirokchilar: <b>${s.participants}</b>\n` +
-    `📢 Kanallar: <b>${s.channels}</b>`,
+    `📢 Kanallar: <b>${s.channels}</b>\n` +
+    `🔒 Majburiy obuna: <b>${s.req_channels}</b>`,
     { parse_mode: 'HTML' }
   );
 });
 
-// /admin_users — Users.json ni adminга yuborish
+// /admin_users — foydalanuvchilar JSON
 bot.command('admin_users', requireAdmin, async (ctx) => {
   try {
     const users = db.getAllUsers();
-    const json  = JSON.stringify(users, null, 2);
-    const buf   = Buffer.from(json, 'utf8');
-
+    const buf   = Buffer.from(JSON.stringify(users, null, 2), 'utf8');
     await ctx.replyWithDocument(
       { source: buf, filename: `users_${Date.now()}.json` },
       {
-        caption: `👤 <b>Foydalanuvchilar bazasi</b>\n\nJami: ${users.length} ta\nVaqt: ${new Date().toLocaleString('uz')}`,
+        caption: `👤 <b>Foydalanuvchilar bazasi</b>\n\nJami: ${users.length} ta\n${new Date().toLocaleString('uz')}`,
         parse_mode: 'HTML'
       }
     );
-  } catch (e) {
-    ctx.reply('❌ Xato: ' + e.message);
-  }
+  } catch (e) { ctx.reply('❌ Xato: ' + e.message); }
 });
 
-// /admin_channels
+// /admin_channels — barcha kanallar
 bot.command('admin_channels', requireAdmin, (ctx) => {
   const channels = db.getAllChannels();
   if (!channels.length) return ctx.reply('Hali kanal yo\'q.');
   const lines = channels.map(c =>
-    `• <code>${c.channel_id}</code> → user <code>${c.owner_id}</code> — ${c.title || '—'}`
+    `• <code>${c.channel_id}</code> → <code>${c.owner_id}</code> — ${c.title || '—'}`
   ).join('\n');
   ctx.reply(`📢 <b>Barcha kanallar:</b>\n\n${lines}`, { parse_mode: 'HTML' });
 });
 
-// /admin_addchannel @username
+// /admin_addchannel @kanal — MAJBURIY OBUNA kanali qo'shish
 bot.command('admin_addchannel', requireAdmin, async (ctx) => {
   const parts = ctx.message.text.trim().split(/\s+/);
-  if (!parts[1]) {
-    return ctx.reply('Foydalanish: /admin_addchannel @kanal_username');
+  if (!parts[1]) return ctx.reply('Foydalanish: /admin_addchannel @kanal_username');
+
+  let ch = parts[1].trim();
+  if (!ch.startsWith('@')) ch = '@' + ch;
+
+  let title = ch;
+  try {
+    const chat = await bot.telegram.getChat(ch);
+    title = chat.title || ch;
+  } catch (e) {
+    return ctx.reply(`❌ Kanal topilmadi: ${e.message}`);
   }
-  await svc.addChannelForUser(bot, ctx, parts[1], { forceOwnerId: ctx.from.id, adminMode: true });
+
+  const added = db.addRequiredChannel(ch, title, ctx.from.id);
+  if (!added) return ctx.reply(`ℹ️ ${ch} allaqachon majburiy obuna ro'yxatida.`);
+
+  ctx.reply(
+    `✅ <b>${title}</b> majburiy obuna kanaliga qo'shildi!\n\n` +
+    `Endi barcha foydalanuvchilar bu kanalga obuna bo'lishi kerak.`,
+    { parse_mode: 'HTML' }
+  );
+});
+
+// /admin_removechannel @kanal — majburiy obunadan olib tashlash
+bot.command('admin_removechannel', requireAdmin, (ctx) => {
+  const parts = ctx.message.text.trim().split(/\s+/);
+  if (!parts[1]) return ctx.reply('Foydalanish: /admin_removechannel @kanal_username');
+  let ch = parts[1].trim();
+  if (!ch.startsWith('@')) ch = '@' + ch;
+  db.removeRequiredChannel(ch);
+  ctx.reply(`🗑 <code>${ch}</code> majburiy obuna ro'yxatidan olib tashlandi.`, { parse_mode: 'HTML' });
+});
+
+// /admin_reqchannels — majburiy obuna kanallari ro'yxati
+bot.command('admin_reqchannels', requireAdmin, (ctx) => {
+  const channels = db.getRequiredChannels();
+  if (!channels.length) return ctx.reply('Hali majburiy obuna kanali yo\'q.');
+  const lines = channels.map((c, i) =>
+    `${i + 1}. <b>${c.title || c.channel_id}</b> — <code>${c.channel_id}</code>`
+  ).join('\n');
+  ctx.reply(`🔒 <b>Majburiy obuna kanallari:</b>\n\n${lines}`, { parse_mode: 'HTML' });
 });
 
 // /admin_battles
 bot.command('admin_battles', requireAdmin, (ctx) => {
   const battles = db.getActiveBattles();
   if (!battles.length) return ctx.reply('Faol battle yo\'q.');
-  const lines = battles.map(b =>
-    `• <code>${b.id}</code> — ${b.battle_name} (${b.current_votes}/${b.target_votes})`
-  ).join('\n');
+  const lines = battles.map(b => {
+    const end = b.end_time ? `\n   ⏰ ${b.end_time.slice(0, 16)}` : '';
+    return `• <code>${b.id}</code> — ${b.battle_name} (${b.current_votes}/${b.target_votes})${end}`;
+  }).join('\n');
   ctx.reply(`⚡ <b>Faol battlelar:</b>\n\n${lines}`, { parse_mode: 'HTML' });
 });
 
@@ -337,8 +384,11 @@ bot.command('admin_rating', requireAdmin, (ctx) => {
   if (!id) return ctx.reply('Foydalanish: /admin_rating BATTLE_ID');
   const battle = db.getBattle(id);
   if (!battle) return ctx.reply('❌ Battle topilmadi.');
+  const b = db.getBattle(id);
   ctx.reply(
-    `📈 <b>${battle.battle_name} — Reyting</b>\n\n${svc.buildRatingLines(id, 20)}`,
+    `📈 <b>${b.battle_name} — Reyting</b>\n` +
+    `🏅 G'oliblar: Top ${b.winner_count} | Min ovoz: ${b.min_votes}\n\n` +
+    `${svc.buildRatingLines(id, 20)}`,
     { parse_mode: 'HTML' }
   );
 });
@@ -366,10 +416,8 @@ bot.command('admin_broadcast', requireAdmin, async (ctx) => {
   const users = db.getAllUsers().filter(u => !u.blocked);
   let ok = 0, fail = 0;
   for (const u of users) {
-    try {
-      await bot.telegram.sendMessage(u.id, text, { parse_mode: 'HTML' });
-      ok++;
-    } catch { fail++; }
+    try { await bot.telegram.sendMessage(u.id, text, { parse_mode: 'HTML' }); ok++; }
+    catch { fail++; }
     await new Promise(r => setTimeout(r, 35));
   }
   ctx.reply(`📤 Broadcast:\n✅ Yuborildi: ${ok}\n❌ Xato: ${fail}`);
