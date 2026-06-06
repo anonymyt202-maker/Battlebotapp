@@ -1,233 +1,90 @@
-
 <!DOCTYPE html>
 <html lang="uz">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Voice Battle</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div id="app">
-
-  <div id="loader" class="loader-screen">
-    <div class="loader-icon">
-      <svg viewBox="0 0 64 64" fill="none">
-        <circle cx="32" cy="32" r="28" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="8 4"/>
-        <path d="M24 20L24 44L44 32Z" fill="var(--accent)"/>
-      </svg>
-    </div>
-    <p class="loader-text">Yuklanmoqda…</p>
-  </div>
-
-  <div id="main" class="main hidden">
-
-    <header class="header">
-      <div class="header-left">
-        <div class="avatar" id="userAvatar">?</div>
-        <div class="header-info">
-          <span class="header-name" id="headerName">Foydalanuvchi</span>
-          <span class="header-sub"  id="headerSub">@username</span>
-        </div>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <div class="title">Voice Battle</div>
+        <div class="subtitle" id="sub">Yuklanmoqda…</div>
       </div>
-      <div class="header-badge" id="activeBadge">⚡ 0</div>
+      <button class="ghost" onclick="switchTab('profile')">Profil</button>
     </header>
 
     <nav class="tabs">
-      <button class="tab active" data-tab="home">🏠 Asosiy</button>
-      <button class="tab" data-tab="channels">📢 Kanallar</button>
-      <button class="tab" data-tab="create">➕ Yaratish</button>
-      <button class="tab" data-tab="mybattles">📋 Mening</button>
+      <button class="tab active" data-tab="home">Asosiy</button>
+      <button class="tab" data-tab="channels">Kanallar</button>
+      <button class="tab" data-tab="create">Yaratish</button>
+      <button class="tab" data-tab="battles">Mening battle</button>
     </nav>
 
-    <!-- ══ HOME ══════════════════════════════════════════════ -->
-    <section id="tab-home" class="tab-content active">
-      <div class="stats-banner">
-        <div class="stats-item">
-          <div class="stats-num" id="statUsers">—</div>
-          <div class="stats-label">Foydalanuvchi</div>
-        </div>
-        <div class="stats-divider"></div>
-        <div class="stats-item">
-          <div class="stats-num" id="statActive">—</div>
-          <div class="stats-label">Faol battle</div>
-        </div>
-        <div class="stats-divider"></div>
-        <div class="stats-item">
-          <div class="stats-num" id="statVotes">—</div>
-          <div class="stats-label">Jami ovoz</div>
-        </div>
-      </div>
-      <div class="section-header">
-        <h2>⚡ Faol Battlelar</h2>
-        <p id="homeSubtitle">Yuklanmoqda…</p>
-      </div>
-      <div id="homeEmpty" class="empty-state hidden">
-        <div class="empty-icon">🏆</div>
-        <p>Hozircha faol battle yo'q</p>
-        <button class="btn-secondary" onclick="switchTab('create')">➕ Yaratish</button>
-      </div>
-      <div id="homeList" class="battles-list"></div>
-    </section>
-
-    <!-- ══ CHANNELS ══════════════════════════════════════════ -->
-    <section id="tab-channels" class="tab-content">
-      <div class="section-header">
-        <h2>📢 Mening Kanallarim</h2>
-        <p>Kanallar avtomatik qo'shiladi</p>
-      </div>
-
-      <div class="info-box">
-        <span class="info-box-icon">🔐</span>
-        <div>
-          <b>Xavfsiz tizim</b><br>
-          Botni kanalingizga <b>admin</b> qilib qo'shing — kanal avtomatik ro'yxatdan o'tadi. Faqat o'z kanalingizda battle yaratasiz.
-        </div>
-      </div>
-
-      <div id="channelsEmpty" class="empty-state" style="padding:24px 0">
-        <div class="empty-icon">📢</div>
-        <p>Hali kanal qo'shilmagan</p>
-        <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Botni kanalingizga admin qiling</p>
-      </div>
-      <div id="channelsList" class="channels-list"></div>
-    </section>
-
-    <!-- ══ CREATE ════════════════════════════════════════════ -->
-    <section id="tab-create" class="tab-content">
-      <div class="section-header">
-        <h2>🎤 Yangi Battle</h2>
-        <p>Barcha majburiy maydonlarni to'ldiring</p>
-      </div>
-
-      <div id="createForm">
-
-        <div class="field-group">
-          <label class="field-label">Battle nomi <span class="req">*</span></label>
-          <div class="field-wrap">
-            <span class="field-icon">🎤</span>
-            <input type="text" id="f-name" class="field-input" placeholder="Yoz Battle 2025" maxlength="80"/>
+    <main>
+      <section id="tab-home" class="panel active">
+        <div class="card">
+          <div class="row">
+            <div><div class="big" id="statUsers">—</div><div class="muted">Users</div></div>
+            <div><div class="big" id="statActive">—</div><div class="muted">Active</div></div>
+            <div><div class="big" id="statVotes">—</div><div class="muted">Votes</div></div>
           </div>
         </div>
+        <div id="activeBattles"></div>
+      </section>
 
-        <div class="field-group">
-          <label class="field-label">Kanal tanlash <span class="req">*</span></label>
-          <div class="field-wrap">
-            <span class="field-icon">📢</span>
-            <select id="f-channel" class="field-input field-select">
-              <option value="">— Kanal tanlang —</option>
+      <section id="tab-channels" class="panel">
+        <div class="card">
+          <h3>Kanal qo‘shish</h3>
+          <p class="muted">Bot kanalga admin bo‘lishi kerak.</p>
+          <div class="field">
+            <input id="channelInput" placeholder="@kanal_username" />
+            <button onclick="addChannel()">Qo‘shish</button>
+          </div>
+          <div id="channelMsg" class="muted"></div>
+        </div>
+        <div id="channelsList"></div>
+      </section>
+
+      <section id="tab-create" class="panel">
+        <div class="card">
+          <h3>Yangi battle</h3>
+          <div class="grid">
+            <input id="battleName" placeholder="Battle nomi" />
+            <select id="channelSelect"></select>
+            <input id="targetVotes" type="number" min="1" placeholder="Maqsad ovoz" />
+            <input id="winnersCount" type="number" min="1" placeholder="G‘oliblar soni" />
+            <input id="minWinVotes" type="number" min="1" placeholder="Minimal g‘alaba ovozi" />
+            <select id="endMode">
+              <option value="target">Ovoz yetganda</option>
+              <option value="time">Vaqt bo‘yicha</option>
+              <option value="both">Ikkalasi ham</option>
             </select>
+            <input id="durationMinutes" type="number" min="1" placeholder="Davomiylik (daq)" />
+            <input id="reward" placeholder="Sovrin" />
+            <input id="imageUrl" placeholder="Rasm URL (ixtiyoriy)" />
           </div>
-          <div id="channelHint" class="field-hint">Avval botni kanalingizga admin qiling</div>
+          <button class="primary" onclick="createBattle()">Battle yaratish</button>
+          <div id="createMsg" class="muted"></div>
         </div>
+      </section>
 
-        <div class="field-group">
-          <label class="field-label">Maqsad ovozlar <span class="req">*</span></label>
-          <div class="field-wrap">
-            <span class="field-icon">🎯</span>
-            <input type="number" id="f-target" class="field-input" placeholder="100" min="1" max="100000"/>
-          </div>
+      <section id="tab-battles" class="panel">
+        <div id="myBattles"></div>
+      </section>
+
+      <section id="tab-profile" class="panel">
+        <div class="card">
+          <h3>Profil</h3>
+          <div id="profileBox" class="muted">—</div>
         </div>
-
-        <!-- G'OLIBLAR SONI va MINIMAL OVOZ -->
-        <div class="field-row-2">
-          <div class="field-group">
-            <label class="field-label">🏅 G'oliblar soni</label>
-            <div class="field-wrap">
-              <input type="number" id="f-winner-count" class="field-input" placeholder="3" min="1" max="20" value="3"/>
-            </div>
-            <div class="field-hint">Masalan: top 3 ta</div>
-          </div>
-          <div class="field-group">
-            <label class="field-label">📊 Min. ovoz</label>
-            <div class="field-wrap">
-              <input type="number" id="f-min-votes" class="field-input" placeholder="0" min="0" max="100000" value="0"/>
-            </div>
-            <div class="field-hint">0 = cheklovsiz</div>
-          </div>
-        </div>
-
-        <!-- AUTO-STOP VAQTI -->
-        <div class="field-group">
-          <label class="field-label">⏰ Tugash vaqti <span class="optional">(ixtiyoriy)</span></label>
-          <div class="field-wrap">
-            <span class="field-icon">⏰</span>
-            <input type="datetime-local" id="f-endtime" class="field-input" style="color-scheme:dark"/>
-          </div>
-          <div class="field-hint">Bo'sh qoldirilsa — faqat ovozlar bilan tugaydi</div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">Sovrin <span class="req">*</span></label>
-          <div class="field-wrap">
-            <span class="field-icon">🎁</span>
-            <textarea id="f-reward" class="field-input field-textarea" placeholder="1-o'ringa: Premium 3 oy&#10;2-o'ringa: Premium 1 oy" maxlength="400"></textarea>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">Rasm URL <span class="optional">(ixtiyoriy)</span></label>
-          <div class="field-wrap">
-            <span class="field-icon">🖼️</span>
-            <input type="url" id="f-image" class="field-input" placeholder="https://example.com/image.jpg"/>
-          </div>
-        </div>
-
-        <div id="imagePreview" class="image-preview hidden">
-          <img id="previewImg" src="" alt="preview"/>
-          <button type="button" id="removeImage" class="remove-img">✕</button>
-        </div>
-
-        <div id="createError" class="error-msg hidden"></div>
-        <button id="createBtn" class="btn-primary">
-          <span id="createBtnText">🚀 Battle yaratish</span>
-          <div id="createSpinner" class="spinner hidden"></div>
-        </button>
-      </div>
-    </section>
-
-    <!-- ══ MY BATTLES ════════════════════════════════════════ -->
-    <section id="tab-mybattles" class="tab-content">
-      <div class="section-header">
-        <h2>📋 Mening Battlelarim</h2>
-        <p id="mySubtitle">Yuklanmoqda…</p>
-      </div>
-      <div id="myEmpty" class="empty-state hidden">
-        <div class="empty-icon">🎤</div>
-        <p>Hali battle yaratmadingiz</p>
-        <button class="btn-secondary" onclick="switchTab('create')">➕ Yaratish</button>
-      </div>
-      <div id="myList" class="battles-list"></div>
-    </section>
-
-  </div><!-- /main -->
-
-  <!-- ══ DETAIL MODAL ══════════════════════════════════════ -->
-  <div id="detailModal" class="modal hidden">
-    <div class="modal-backdrop" onclick="closeDetail()"></div>
-    <div class="modal-card modal-tall">
-      <button class="modal-close" onclick="closeDetail()">✕</button>
-      <div id="detailContent"></div>
-    </div>
+      </section>
+    </main>
   </div>
 
-  <!-- ══ SUCCESS MODAL ═════════════════════════════════════ -->
-  <div id="successModal" class="modal hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card">
-      <div class="modal-icon">🎉</div>
-      <h3>Battle yaratildi!</h3>
-      <p>Kanalga post muvaffaqiyatli yuborildi.</p>
-      <div id="modalDetails" class="modal-details"></div>
-      <button class="btn-primary" onclick="closeSuccess()">✅ Yopish</button>
-    </div>
-  </div>
-
-</div>
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
