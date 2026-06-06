@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -77,30 +78,21 @@
     <section id="tab-channels" class="tab-content">
       <div class="section-header">
         <h2>📢 Mening Kanallarim</h2>
-        <p>Battle yaratish uchun kanalingizni qo'shing</p>
+        <p>Kanallar avtomatik qo'shiladi</p>
       </div>
 
       <div class="info-box">
-        <span class="info-box-icon">ℹ️</span>
+        <span class="info-box-icon">🔐</span>
         <div>
-          <b>Xavfsizlik tizimi</b><br>
-          Faqat o'z kanalingizda battle yarata olasiz. Botni kanalingizga admin qilib, pastdan qo'shing.
+          <b>Xavfsiz tizim</b><br>
+          Botni kanalingizga <b>admin</b> qilib qo'shing — kanal avtomatik ro'yxatdan o'tadi. Faqat o'z kanalingizda battle yaratasiz.
         </div>
       </div>
 
-      <div class="field-group" style="margin-top:16px">
-        <label class="field-label">Kanal username</label>
-        <div class="field-wrap">
-          <span class="field-icon">📢</span>
-          <input type="text" id="ch-input" class="field-input" placeholder="@mening_kanalim"/>
-          <button type="button" id="addChannelBtn" class="field-action">Qo'shish</button>
-        </div>
-        <div id="chStatus" class="field-hint"></div>
-      </div>
-
-      <div id="channelsEmpty" class="empty-state hidden">
+      <div id="channelsEmpty" class="empty-state" style="padding:24px 0">
         <div class="empty-icon">📢</div>
         <p>Hali kanal qo'shilmagan</p>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Botni kanalingizga admin qiling</p>
       </div>
       <div id="channelsList" class="channels-list"></div>
     </section>
@@ -113,6 +105,7 @@
       </div>
 
       <div id="createForm">
+
         <div class="field-group">
           <label class="field-label">Battle nomi <span class="req">*</span></label>
           <div class="field-wrap">
@@ -129,7 +122,7 @@
               <option value="">— Kanal tanlang —</option>
             </select>
           </div>
-          <div id="channelHint" class="field-hint">Avval "Kanallar" bo'limida kanal qo'shing</div>
+          <div id="channelHint" class="field-hint">Avval botni kanalingizga admin qiling</div>
         </div>
 
         <div class="field-group">
@@ -138,6 +131,34 @@
             <span class="field-icon">🎯</span>
             <input type="number" id="f-target" class="field-input" placeholder="100" min="1" max="100000"/>
           </div>
+        </div>
+
+        <!-- G'OLIBLAR SONI va MINIMAL OVOZ -->
+        <div class="field-row-2">
+          <div class="field-group">
+            <label class="field-label">🏅 G'oliblar soni</label>
+            <div class="field-wrap">
+              <input type="number" id="f-winner-count" class="field-input" placeholder="3" min="1" max="20" value="3"/>
+            </div>
+            <div class="field-hint">Masalan: top 3 ta</div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">📊 Min. ovoz</label>
+            <div class="field-wrap">
+              <input type="number" id="f-min-votes" class="field-input" placeholder="0" min="0" max="100000" value="0"/>
+            </div>
+            <div class="field-hint">0 = cheklovsiz</div>
+          </div>
+        </div>
+
+        <!-- AUTO-STOP VAQTI -->
+        <div class="field-group">
+          <label class="field-label">⏰ Tugash vaqti <span class="optional">(ixtiyoriy)</span></label>
+          <div class="field-wrap">
+            <span class="field-icon">⏰</span>
+            <input type="datetime-local" id="f-endtime" class="field-input" style="color-scheme:dark"/>
+          </div>
+          <div class="field-hint">Bo'sh qoldirilsa — faqat ovozlar bilan tugaydi</div>
         </div>
 
         <div class="field-group">
