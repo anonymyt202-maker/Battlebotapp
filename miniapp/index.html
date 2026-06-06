@@ -1,90 +1,189 @@
 <!DOCTYPE html>
 <html lang="uz">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
   <title>Voice Battle</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-  <div id="app">
-    <header class="topbar">
-      <div>
-        <div class="title">Voice Battle</div>
-        <div class="subtitle" id="sub">Yuklanmoqda…</div>
-      </div>
-      <button class="ghost" onclick="switchTab('profile')">Profil</button>
-    </header>
-
-    <nav class="tabs">
-      <button class="tab active" data-tab="home">Asosiy</button>
-      <button class="tab" data-tab="channels">Kanallar</button>
-      <button class="tab" data-tab="create">Yaratish</button>
-      <button class="tab" data-tab="battles">Mening battle</button>
-    </nav>
-
-    <main>
-      <section id="tab-home" class="panel active">
-        <div class="card">
-          <div class="row">
-            <div><div class="big" id="statUsers">—</div><div class="muted">Users</div></div>
-            <div><div class="big" id="statActive">—</div><div class="muted">Active</div></div>
-            <div><div class="big" id="statVotes">—</div><div class="muted">Votes</div></div>
-          </div>
-        </div>
-        <div id="activeBattles"></div>
-      </section>
-
-      <section id="tab-channels" class="panel">
-        <div class="card">
-          <h3>Kanal qo‘shish</h3>
-          <p class="muted">Bot kanalga admin bo‘lishi kerak.</p>
-          <div class="field">
-            <input id="channelInput" placeholder="@kanal_username" />
-            <button onclick="addChannel()">Qo‘shish</button>
-          </div>
-          <div id="channelMsg" class="muted"></div>
-        </div>
-        <div id="channelsList"></div>
-      </section>
-
-      <section id="tab-create" class="panel">
-        <div class="card">
-          <h3>Yangi battle</h3>
-          <div class="grid">
-            <input id="battleName" placeholder="Battle nomi" />
-            <select id="channelSelect"></select>
-            <input id="targetVotes" type="number" min="1" placeholder="Maqsad ovoz" />
-            <input id="winnersCount" type="number" min="1" placeholder="G‘oliblar soni" />
-            <input id="minWinVotes" type="number" min="1" placeholder="Minimal g‘alaba ovozi" />
-            <select id="endMode">
-              <option value="target">Ovoz yetganda</option>
-              <option value="time">Vaqt bo‘yicha</option>
-              <option value="both">Ikkalasi ham</option>
-            </select>
-            <input id="durationMinutes" type="number" min="1" placeholder="Davomiylik (daq)" />
-            <input id="reward" placeholder="Sovrin" />
-            <input id="imageUrl" placeholder="Rasm URL (ixtiyoriy)" />
-          </div>
-          <button class="primary" onclick="createBattle()">Battle yaratish</button>
-          <div id="createMsg" class="muted"></div>
-        </div>
-      </section>
-
-      <section id="tab-battles" class="panel">
-        <div id="myBattles"></div>
-      </section>
-
-      <section id="tab-profile" class="panel">
-        <div class="card">
-          <h3>Profil</h3>
-          <div id="profileBox" class="muted">—</div>
-        </div>
-      </section>
-    </main>
+<div id="app">
+  <div id="loader" class="loader-screen">
+    <div class="loader-ring"></div>
+    <div class="loader-text">Battle bot yuklanmoqda…</div>
   </div>
 
-  <script src="app.js"></script>
+  <div id="main" class="main hidden">
+    <header class="topbar">
+      <div class="profile-mini">
+        <div class="avatar" id="userAvatar">?</div>
+        <div>
+          <div class="name" id="headerName">Foydalanuvchi</div>
+          <div class="sub" id="headerSub">@username</div>
+        </div>
+      </div>
+      <div class="badge" id="activeBadge">⚡ 0</div>
+    </header>
+
+    <section class="hero">
+      <div class="hero-card">
+        <div class="hero-title">Voice Battle</div>
+        <div class="hero-text">Kanallarni bog'la, battle yarat va ovozlarni yig' 🎤</div>
+        <div class="hero-stats">
+          <div><span id="statUsers">—</span><small>Foydalanuvchi</small></div>
+          <div><span id="statActive">—</span><small>Faol battle</small></div>
+          <div><span id="statVotes">—</span><small>Ovozlar</small></div>
+        </div>
+      </div>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="home">🏠 Asosiy</button>
+      <button class="tab" data-tab="channels">📢 Kanallar</button>
+      <button class="tab" data-tab="create">➕ Yaratish</button>
+      <button class="tab" data-tab="mybattles">📋 Mening</button>
+    </nav>
+
+    <section id="tab-home" class="tab-content active">
+      <div class="section-header">
+        <h2>Faol Battlelar</h2>
+        <p id="homeSubtitle">Yuklanmoqda…</p>
+      </div>
+      <div id="homeEmpty" class="empty-state hidden">
+        <div class="empty-icon">🏆</div>
+        <p>Hozircha faol battle yo'q</p>
+      </div>
+      <div id="homeList" class="cards"></div>
+    </section>
+
+    <section id="tab-channels" class="tab-content">
+      <div class="section-header">
+        <h2>Mening Kanallarim</h2>
+        <p>Bot admin + siz owner/admin bo'lsangiz kanal avtomatik qo'shiladi.</p>
+      </div>
+      <div class="hint-card">
+        Faqat o'zingizning kanalingizni qo'shing. Botni kanalingizga admin qilib qo'ying, so'ng username yuboring.
+      </div>
+      <div class="field-group">
+        <label>Kanal username</label>
+        <div class="row">
+          <input id="ch-input" class="input" placeholder="@kanalim"/>
+          <button id="addChannelBtn" class="btn">Qo'shish</button>
+        </div>
+        <div id="chStatus" class="field-hint"></div>
+      </div>
+      <div id="channelsEmpty" class="empty-state hidden">
+        <div class="empty-icon">📢</div>
+        <p>Hali kanal qo'shilmagan</p>
+      </div>
+      <div id="channelsList" class="cards"></div>
+    </section>
+
+    <section id="tab-create" class="tab-content">
+      <div class="section-header">
+        <h2>Yangi Battle</h2>
+        <p>Ovozga yoki vaqtga qarab tugaydigan battle yarating.</p>
+      </div>
+
+      <div class="panel">
+        <div class="field-group">
+          <label>Battle nomi <span class="req">*</span></label>
+          <input id="f-name" class="input" placeholder="Masalan: Yozgi Battle" maxlength="80"/>
+        </div>
+
+        <div class="field-group">
+          <label>Kanal tanlash <span class="req">*</span></label>
+          <select id="f-channel" class="input">
+            <option value="">— Kanal tanlang —</option>
+          </select>
+          <div id="channelHint" class="field-hint">Avval kanal qo'shing</div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label>G'oliblar soni</label>
+            <input id="f-winners" type="number" class="input" value="3" min="1" max="20"/>
+          </div>
+          <div class="field-group">
+            <label>Minimal yutuq ovozi</label>
+            <input id="f-minvotes" type="number" class="input" value="1" min="1" max="100000"/>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label>Tugatish turi</label>
+            <select id="f-endmode" class="input">
+              <option value="votes">Ovozga yetganda</option>
+              <option value="time">Vaqtga qarab</option>
+            </select>
+          </div>
+          <div class="field-group" id="timeWrap">
+            <label>Vaqt (daqiqa)</label>
+            <input id="f-duration" type="number" class="input" value="60" min="1" max="10080"/>
+          </div>
+        </div>
+
+        <div class="field-group" id="votesWrap">
+          <label>Maqsad ovozlar <span class="req">*</span></label>
+          <input id="f-target" type="number" class="input" placeholder="100" min="1" max="100000"/>
+        </div>
+
+        <div class="field-group">
+          <label>Sovrin <span class="req">*</span></label>
+          <textarea id="f-reward" class="input textarea" placeholder="1-o'rin: Premium 1 oy" maxlength="400"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label>Rasm URL <span class="optional">(ixtiyoriy)</span></label>
+          <input id="f-image" type="url" class="input" placeholder="https://..."/>
+        </div>
+
+        <div id="imagePreview" class="image-preview hidden">
+          <img id="previewImg" alt="preview"/>
+          <button id="removeImage" class="close-btn" type="button">✕</button>
+        </div>
+
+        <div id="createError" class="error-msg hidden"></div>
+        <button id="createBtn" class="create-btn"><span id="createBtnText">🚀 Battle yaratish</span><span id="createSpinner" class="spinner hidden"></span></button>
+      </div>
+    </section>
+
+    <section id="tab-mybattles" class="tab-content">
+      <div class="section-header">
+        <h2>Mening Battlelarim</h2>
+        <p id="mySubtitle">Yuklanmoqda…</p>
+      </div>
+      <div id="myEmpty" class="empty-state hidden">
+        <div class="empty-icon">🎤</div>
+        <p>Hali battle yaratmadingiz</p>
+      </div>
+      <div id="myList" class="cards"></div>
+    </section>
+  </div>
+
+  <div id="detailModal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeDetail()"></div>
+    <div class="modal-card">
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+
+  <div id="successModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-emoji">🎉</div>
+      <h3>Battle yaratildi!</h3>
+      <div id="modalDetails" class="modal-details"></div>
+      <button class="create-btn" onclick="closeSuccess()">Yopish</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
