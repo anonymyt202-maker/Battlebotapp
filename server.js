@@ -1,8 +1,9 @@
 'use strict';
-
 require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const bot = require('./bot');
 const db = require('./database');
 const svc = require('./services/battleService');
@@ -22,7 +23,6 @@ app.use((req, res, next) => {
 });
 
 app.use('/miniapp', express.static(path.join(__dirname, 'miniapp')));
-app.use('/saved', express.static(path.join(__dirname, 'saved')));
 
 function adminMw(req, res, next) {
   if (!db.isAdmin(req.telegramUser?.id)) {
@@ -31,16 +31,11 @@ function adminMw(req, res, next) {
   next();
 }
 
-app.get('/', (_, res) => {
-  res.json({ status: 'ok', app: 'Voice Battle', time: new Date().toISOString() });
-});
+app.get('/', (_, res) => res.json({ status: 'ok', app: 'Voice Battle', time: new Date().toISOString() }));
 
 app.get('/api/stats', (_, res) => {
-  try {
-    res.json({ success: true, ...db.getStats() });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  try { res.json({ success: true, ...db.getStats() }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
@@ -49,6 +44,7 @@ app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
     const user = db.upsertUser(tg.id, tg.username, tg.first_name);
     const battles = db.getUserBattles(tg.id);
     const channels = db.getUserChannels(tg.id);
+
     res.json({
       success: true,
       user: {
@@ -64,7 +60,20 @@ app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
         channels: channels.length,
       },
       channels,
-      battles: battles.slice(0, 30),
+      battles: battles.slice(0, 30).map(b => ({
+        id: b.id,
+        battle_name: b.battle_name,
+        channel_id: b.channel_id,
+        target_votes: b.target_votes,
+        winners_count: b.winners_count,
+        min_votes: b.min_votes,
+        end_mode: b.end_mode,
+        end_at: b.end_at,
+        current_votes: b.current_votes,
+        reward: b.reward,
+        active: !!b.active,
+        created_at: b.created_at,
+      })),
     });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -72,22 +81,18 @@ app.get('/api/profile', telegramAuthMiddleware, (req, res) => {
 });
 
 app.post('/api/check-channel', telegramAuthMiddleware, async (req, res) => {
-  let ch = String(req.body.channel || '').trim();
+  let ch = (req.body.channel || '').trim();
   if (!ch) return res.status(400).json({ success: false, error: 'Kanal kerak' });
   if (!ch.startsWith('@') && !ch.startsWith('-')) ch = '@' + ch;
-
   try {
-    const me = await bot.telegram.getMe();
-    const mbr = await bot.telegram.getChatMember(ch, me.id);
-    const botAdmin = ['administrator', 'creator'].includes(mbr.status);
-    const chat = await bot.telegram.getChat(ch);
-    const title = chat.title || ch;
+    const info = await svc.verifyChannelReady(bot, ch, req.telegramUser.id);
     res.json({
-      success: botAdmin,
-      bot_admin: botAdmin,
-      title,
-      status: mbr.status,
-      error: botAdmin ? null : 'Bot kanalda admin emas',
+      success: info.ok,
+      bot_admin: info.botOk,
+      channel_owned: info.userOk,
+      status: info.userStatus,
+      title: info.chat?.title || ch,
+      error: !info.botOk ? 'Bot kanalda admin emas' : (!info.userOk ? 'Bu kanal sizniki emas' : null),
     });
   } catch (e) {
     res.json({ success: false, error: 'Kanal topilmadi: ' + e.message });
@@ -97,23 +102,15 @@ app.post('/api/check-channel', telegramAuthMiddleware, async (req, res) => {
 app.post('/api/add-channel', telegramAuthMiddleware, async (req, res) => {
   try {
     const tg = req.telegramUser;
-    let ch = String(req.body.channel || '').trim();
+    let ch = (req.body.channel || '').trim();
     if (!ch) return res.status(400).json({ success: false, error: 'Kanal kerak' });
     if (!ch.startsWith('@') && !ch.startsWith('-')) ch = '@' + ch;
 
-    let title = ch;
-    try {
-      const me = await bot.telegram.getMe();
-      const mbr = await bot.telegram.getChatMember(ch, me.id);
-      if (!['administrator', 'creator'].includes(mbr.status)) {
-        return res.json({ success: false, error: 'Bot kanalda admin emas. Avval botni admin qiling.' });
-      }
-      const chat = await bot.telegram.getChat(ch);
-      title = chat.title || ch;
-    } catch (e) {
-      return res.json({ success: false, error: 'Kanal topilmadi: ' + e.message });
-    }
+    const info = await svc.verifyChannelReady(bot, ch, tg.id);
+    if (!info.botOk) return res.json({ success: false, error: 'Bot kanalda admin emas! Avval botni admin qiling.' });
+    if (!info.userOk) return res.json({ success: false, error: 'Faqat kanal owner/admin qo\'sha oladi.' });
 
+    const title = info.chat?.title || ch;
     db.upsertUser(tg.id, tg.username, tg.first_name);
     const added = db.addChannel(tg.id, ch, title);
     res.json({ success: true, already: !added, channel: { channel_id: ch, title } });
@@ -126,47 +123,46 @@ app.post('/api/create-battle', telegramAuthMiddleware, battleCreateLimit, async 
   try {
     const tg = req.telegramUser;
     const {
-      battleName,
-      channelId,
-      targetVotes,
-      reward,
-      imageUrl,
-      winnersCount,
-      minWinVotes,
-      endMode,
-      durationMinutes,
-      endsAt,
+      battleName, channelId, targetVotes, reward, imageUrl,
+      winnersCount, minVotes, endMode, endMinutes,
     } = req.body;
 
     if (!battleName?.trim()) return res.status(400).json({ success: false, error: 'Battle nomi kerak' });
     if (!channelId?.trim()) return res.status(400).json({ success: false, error: 'Kanal kerak' });
     if (!reward?.trim()) return res.status(400).json({ success: false, error: 'Sovrin kerak' });
-    if (!targetVotes || Number(targetVotes) < 1) return res.status(400).json({ success: false, error: 'Maqsad ovoz kerak' });
-
-    const normalizedMode = String(endMode || 'target');
-    if (['time', 'both'].includes(normalizedMode) && (!durationMinutes || Number(durationMinutes) < 1) && !endsAt) {
-      return res.status(400).json({ success: false, error: 'Vaqtli battle uchun durationMinutes yoki endsAt kerak' });
-    }
 
     let ch = channelId.trim();
     if (!ch.startsWith('@') && !ch.startsWith('-')) ch = '@' + ch;
 
     if (!db.isChannelOwner(tg.id, ch)) {
-      return res.status(403).json({ success: false, error: 'Bu kanal sizniki emas yoki qo‘shilmagan.' });
+      return res.status(403).json({ success: false, error: 'Bu kanal sizniki emas. Avval kanalni qo\'shing.' });
     }
 
+    const info = await svc.verifyChannelReady(bot, ch, tg.id);
+    if (!info.botOk) return res.status(400).json({ success: false, error: 'Bot kanalda admin emas!' });
+
+    const mode = endMode === 'time' ? 'time' : 'votes';
+    const goal = parseInt(targetVotes, 10) || 10;
+    const winners = parseInt(winnersCount, 10) || 3;
+    const min = parseInt(minVotes, 10) || 1;
+    let endAt = null;
+    if (mode === 'time') {
+      const mins = Math.max(1, parseInt(endMinutes, 10) || 60);
+      endAt = new Date(Date.now() + mins * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    }
+
+    db.upsertUser(tg.id, tg.username, tg.first_name);
     const battle = await svc.createNewBattle(bot, {
       ownerId: tg.id,
       battleName: battleName.trim(),
       channelId: ch,
-      targetVotes: Number(targetVotes),
+      targetVotes: goal,
+      winnersCount: winners,
+      minVotes: min,
+      endMode: mode,
+      endAt,
       reward: reward.trim(),
       imageUrl: imageUrl?.trim() || null,
-      winnersCount: Number(winnersCount) || 1,
-      minWinVotes: Number(minWinVotes) || 1,
-      endMode: String(endMode || 'target'),
-      durationMinutes: durationMinutes ? Number(durationMinutes) : null,
-      endsAt: endsAt ? new Date(endsAt).toISOString() : null,
     });
 
     res.json({ success: true, battle });
@@ -176,32 +172,59 @@ app.post('/api/create-battle', telegramAuthMiddleware, battleCreateLimit, async 
   }
 });
 
-app.get('/api/active-battles', telegramAuthMiddleware, (req, res) => {
-  try {
-    const battles = db.getActiveBattles().map(b => ({
-      ...b,
-      top3: db.getTopParticipants(b.id, 3),
-    }));
-    res.json({ success: true, battles });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
 app.get('/api/battle/:id', telegramAuthMiddleware, (req, res) => {
   try {
     const battle = db.getBattle(req.params.id);
     if (!battle) return res.status(404).json({ success: false, error: 'Battle topilmadi' });
     const tg = req.telegramUser;
+    const top = db.getTopParticipants(battle.id, 10);
+    const me = db.getParticipant(battle.id, tg.id);
     res.json({
       success: true,
-      battle,
-      top: db.getTopParticipants(battle.id, 10),
-      participants: db.getAllParticipants(battle.id),
-      my_participation: db.getParticipant(battle.id, tg.id)
-        ? { joined: true, ref_link: svc.buildVoteLink(battle.id, tg.id) }
-        : { joined: false },
+      battle: {
+        id: battle.id,
+        battle_name: battle.battle_name,
+        channel_id: battle.channel_id,
+        target_votes: battle.target_votes,
+        winners_count: battle.winners_count,
+        min_votes: battle.min_votes,
+        end_mode: battle.end_mode,
+        end_at: battle.end_at,
+        current_votes: battle.current_votes,
+        reward: battle.reward,
+        active: !!battle.active,
+        created_at: battle.created_at,
+      },
+      top,
+      my_participation: me ? {
+        joined: true,
+        votes: me.votes,
+        ref_link: svc.buildRefLink(battle.id, tg.id),
+        vote_link: svc.buildVoteLink(battle.id, tg.id),
+      } : { joined: false },
     });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get('/api/active-battles', telegramAuthMiddleware, (req, res) => {
+  try {
+    const battles = db.getActiveBattles().map(b => ({
+      id: b.id,
+      battle_name: b.battle_name,
+      channel_id: b.channel_id,
+      target_votes: b.target_votes,
+      winners_count: b.winners_count,
+      min_votes: b.min_votes,
+      end_mode: b.end_mode,
+      end_at: b.end_at,
+      current_votes: b.current_votes,
+      reward: b.reward,
+      created_at: b.created_at,
+      top3: db.getTopParticipants(b.id, 3),
+    }));
+    res.json({ success: true, battles });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -219,36 +242,25 @@ app.post('/api/join-battle', telegramAuthMiddleware, async (req, res) => {
 
     db.upsertUser(tg.id, tg.username, tg.first_name);
     if (db.isParticipant(battleId, tg.id)) {
-      return res.json({ success: true, already: true, ref_link: svc.buildVoteLink(battleId, tg.id) });
+      return res.json({ success: true, already: true, ref_link: svc.buildRefLink(battleId, tg.id), vote_link: svc.buildVoteLink(battleId, tg.id) });
     }
 
-    db.joinBattle(battleId, tg.id, tg.username || `user${tg.id}`);
-    await svc.updateChannelPost(bot, battleId);
-    res.json({ success: true, already: false, ref_link: svc.buildVoteLink(battleId, tg.id) });
+    db.joinBattle(battleId, tg.id, tg.username || String(tg.id));
+    res.json({ success: true, already: false, ref_link: svc.buildRefLink(battleId, tg.id), vote_link: svc.buildVoteLink(battleId, tg.id) });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
-app.get('/api/admin/users-json', telegramAuthMiddleware, adminMw, (_, res) => {
-  const file = path.join(__dirname, 'saved', 'users.json');
-  res.setHeader('Content-Disposition', `attachment; filename="users_${Date.now()}.json"`);
+app.get('/api/admin/users-json', telegramAuthMiddleware, adminMw, (req, res) => {
+  const users = db.getAllUsers();
+  const savedDir = path.join(__dirname, 'saved');
+  fs.mkdirSync(savedDir, { recursive: true });
+  const filePath = path.join(savedDir, `users_${Date.now()}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(users, null, 2), 'utf8');
+  res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
   res.setHeader('Content-Type', 'application/json');
-  res.sendFile(file);
-});
-
-app.get('/api/admin/channels-json', telegramAuthMiddleware, adminMw, (_, res) => {
-  const file = path.join(__dirname, 'saved', 'channels.json');
-  res.setHeader('Content-Disposition', `attachment; filename="channels_${Date.now()}.json"`);
-  res.setHeader('Content-Type', 'application/json');
-  res.sendFile(file);
-});
-
-app.get('/api/admin/battles-json', telegramAuthMiddleware, adminMw, (_, res) => {
-  const file = path.join(__dirname, 'saved', 'battles.json');
-  res.setHeader('Content-Disposition', `attachment; filename="battles_${Date.now()}.json"`);
-  res.setHeader('Content-Type', 'application/json');
-  res.sendFile(file);
+  res.sendFile(filePath);
 });
 
 app.get('/api/admin/stats', telegramAuthMiddleware, adminMw, (_, res) => {
@@ -262,26 +274,19 @@ app.post('/api/admin/close', telegramAuthMiddleware, adminMw, async (req, res) =
   res.json({ success: true });
 });
 
-function autoFinishExpiredBattles() {
-  const expired = db.getExpiredBattles();
-  if (!expired.length) return;
-  for (const battle of expired) {
-    svc.finishBattle(bot, battle.id, 'time').catch(e => console.log('[autoFinish]', e.message));
-  }
-}
-
 bot.launch({ allowedUpdates: ['message', 'callback_query'] })
-  .then(() => console.log(`✅ Bot @${process.env.BOT_USERNAME || 'bot'} ishga tushdi`))
+  .then(() => console.log(`✅ Bot @${process.env.BOT_USERNAME} ishga tushdi`))
   .catch(e => console.error('❌ Bot xatosi:', e.message));
+
+setInterval(() => {
+  svc.scanAndFinishExpiredBattles(bot).catch(err => console.log('[scanExpired interval]', err.message));
+}, 30 * 1000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🌐 Server: http://localhost:${PORT}`);
   console.log(`📱 Mini App: ${(process.env.MINIAPP_URL || '')}/miniapp`);
 });
-
-setInterval(autoFinishExpiredBattles, 30 * 1000);
-setInterval(() => db.persistSnapshots(), 5 * 60 * 1000);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
